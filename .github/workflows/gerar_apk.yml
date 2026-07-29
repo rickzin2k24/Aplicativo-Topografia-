@@ -18,13 +18,13 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Dar permissão ao Gradle
-      run: chmod +x gradlew || true
-
-    - name: Gerar o APK
-      uses: gradle/gradle-build-action@v2
+    - name: Instalar o motor do Gradle
+      uses: gradle/actions/setup-gradle@v3
       with:
-        arguments: assembleDebug
+        gradle-version: '8.4'
+
+    - name: Compilar o Aplicativo
+      run: gradle assembleDebug
 
     - name: Salvar o APK pronto
       uses: actions/upload-artifact@v4
