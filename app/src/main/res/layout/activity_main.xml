@@ -75,7 +75,6 @@
             android:gravity="center"
             android:layout_marginBottom="24dp"/>
 
-        <!-- LINHA DIVISÓRIA PARA O MÓDULO DE COLETA -->
         <View
             android:layout_width="match_parent"
             android:layout_height="2dp"
@@ -99,7 +98,19 @@
             android:textStyle="bold"
             android:backgroundTint="#1976D2"
             android:textColor="#FFFFFF"
-            android:layout_marginBottom="16dp"/>
+            android:layout_marginBottom="8dp"/>
+
+        <!-- NOVO BOTÃO DE EXPORTAÇÃO -->
+        <Button
+            android:id="@+id/btnExportarCsv"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="EXPORTAR LEVANTAMENTO (.CSV)"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:backgroundTint="#FF9800"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="24dp"/>
 
         <Button
             android:id="@+id/btnConectar"
