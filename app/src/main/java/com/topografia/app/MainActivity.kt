@@ -11,10 +11,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 import java.io.FileWriter
-
-import org.locationtech.proj4j.CRSFactory
-import org.locationtech.proj4j.CoordinateTransformFactory
-import org.locationtech.proj4j.ProjCoordinate
+import kotlin.math.*
 
 data class PontoTopografico(
     val nome: String,
@@ -57,19 +54,12 @@ class MainActivity : AppCompatActivity() {
     private var statusRtkAtual: String = "Desconectado"
 
     private val listaDePontos = mutableListOf<PontoTopografico>()
-    
-    // Conexão com o Banco de Dados
     private lateinit var dbHelper: DatabaseHelper
-
-    private val crsFactory = CRSFactory()
-    private val ctFactory = CoordinateTransformFactory()
-    private val wgs84Src = crsFactory.createFromName("EPSG:4326")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Inicializa o Banco de Dados
         dbHelper = DatabaseHelper(this)
 
         btnCad = findViewById(R.id.btnCad)
@@ -92,14 +82,9 @@ class MainActivity : AppCompatActivity() {
         
         mapaTopografico = findViewById(R.id.mapaTopografico)
         
-        // RESGATE DE SEGURANÇA: Carrega os pontos do BD ao abrir o app
         listaDePontos.addAll(dbHelper.buscarTodosPontos())
         mapaTopografico.listaDePontos = listaDePontos
         mapaTopografico.invalidate()
-        
-        if (listaDePontos.isNotEmpty()) {
-            Toast.makeText(this, "${listaDePontos.size} pontos recuperados do Banco de Dados!", Toast.LENGTH_SHORT).show()
-        }
 
         mapaTopografico.onMedicaoCalculada = { distancia ->
             Toast.makeText(this, "Distância Trena: ${String.format("%.3f", distancia)} m", Toast.LENGTH_LONG).show()
@@ -128,7 +113,6 @@ class MainActivity : AppCompatActivity() {
 
             val novoPonto = PontoTopografico(nomeDoPonto, norteUtmAtual, lesteUtmAtual, cotaChaoAtual, zonaUtmAtual, statusRtkAtual)
             
-            // Salva na memória do App e no Banco de Dados Físico
             listaDePontos.add(novoPonto)
             dbHelper.inserirPonto(novoPonto)
             
@@ -137,7 +121,6 @@ class MainActivity : AppCompatActivity() {
 
             Toast.makeText(this, "Ponto '$nomeDoPonto' SALVO!", Toast.LENGTH_SHORT).show()
 
-            // AUTO-INCREMENTO INTELIGENTE: P1 -> P2, EIXO-01 -> EIXO-02
             val match = Regex("(\\d+)$").find(nomeDoPonto)
             if (match != null) {
                 val numStr = match.value
@@ -147,7 +130,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 etNomePonto.setText("${nomeDoPonto}1")
             }
-            // Move o cursor de digitação para o final
             etNomePonto.setSelection(etNomePonto.text.length)
         }
 
@@ -180,7 +162,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processarNMEA(linhaNmea: String) {
-        // FILTRO DE RUÍDO: Ignora dados sujos ou cortados do Bluetooth
         if (!linhaNmea.startsWith("$") || !linhaNmea.contains("*")) {
             tvStatusRTK.text = "RUÍDO/PERDA SINAL"
             tvStatusRTK.setTextColor(Color.parseColor("#FF9800"))
@@ -197,28 +178,19 @@ class MainActivity : AppCompatActivity() {
                 val cotaNmeaString = partes[9]
                 val qualidade = partes[6] 
 
-                // Prevenção de erro: se vier vazio, aborta a leitura
                 if (latNmea.isEmpty() || lonNmea.isEmpty() || cotaNmeaString.isEmpty()) return
 
                 latAtual = converterNmeaParaGrausDecimais(latNmea, latDir)
                 lonAtual = converterNmeaParaGrausDecimais(lonNmea, lonDir)
 
-                val lat = latAtual
-                val lon = lonAtual
-                val zonaUtmNumerica = ((lon + 180) / 6).toInt() + 1
-                val hemisferio = if (lat >= 0) "n" else "s"
-                zonaUtmAtual = "${zonaUtmNumerica}${hemisferio.toUpperCase()}"
-
-                val epsgCode = if (lat >= 0) (32600 + zonaUtmNumerica) else (32700 + zonaUtmNumerica)
-                val utmDst = crsFactory.createFromName("EPSG:${epsgCode}")
-
-                val trans = ctFactory.createTransform(wgs84Src, utmDst)
-                val latLonCoordinate = ProjCoordinate(lon, lat)
-                val utmCoordinate = ProjCoordinate()
-                trans.transform(latLonCoordinate, utmCoordinate)
-
-                norteUtmAtual = utmCoordinate.y
-                lesteUtmAtual = utmCoordinate.x
+                // NOVO CÁLCULO UTM 100% NATIVO (Sem bibliotecas externas)
+                val utmCoords = converterGrausParaUTM(latAtual, lonAtual)
+                lesteUtmAtual = utmCoords[0]
+                norteUtmAtual = utmCoords[1]
+                
+                val zonaUtmNumerica = ((lonAtual + 180) / 6).toInt() + 1
+                val hemisferio = if (latAtual >= 0) "N" else "S"
+                zonaUtmAtual = "${zonaUtmNumerica}${hemisferio}"
                 
                 mapaTopografico.rtkNorte = norteUtmAtual
                 mapaTopografico.rtkLeste = lesteUtmAtual
@@ -271,7 +243,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } catch (e: Exception) {
-            // Em caso de erro matemático, não quebra o app
             tvStatusRTK.text = "ERRO DE CÁLCULO"
             tvStatusRTK.setTextColor(Color.parseColor("#FF5252"))
         }
@@ -291,5 +262,42 @@ class MainActivity : AppCompatActivity() {
 
         if (direcao == "S" || direcao == "W") grausDecimais *= -1
         return grausDecimais
+    }
+
+    // FÓRMULA NATIVA DE WGS84 PARA UTM (Substitui a biblioteca externa)
+    private fun converterGrausParaUTM(lat: Double, lon: Double): DoubleArray {
+        val a = 6378137.0
+        val eccSquared = 0.00669438
+        val k0 = 0.9996
+
+        val zoneNumber = ((lon + 180) / 6).toInt() + 1
+        val lonOrigin = (zoneNumber - 1) * 6 - 180 + 3
+        val lonOriginRad = Math.toRadians(lonOrigin.toDouble())
+        val latRad = Math.toRadians(lat)
+        val lonRad = Math.toRadians(lon)
+
+        val eccPrimeSquared = eccSquared / (1 - eccSquared)
+        val N = a / sqrt(1 - eccSquared * sin(latRad) * sin(latRad))
+        val T = tan(latRad) * tan(latRad)
+        val C = eccPrimeSquared * cos(latRad) * cos(latRad)
+        val A = cos(latRad) * (lonRad - lonOriginRad)
+
+        val M = a * ((1 - eccSquared / 4 - 3 * eccSquared * eccSquared / 64 - 5 * eccSquared * eccSquared * eccSquared / 256) * latRad
+                - (3 * eccSquared / 8 + 3 * eccSquared * eccSquared / 32 + 45 * eccSquared * eccSquared * eccSquared / 1024) * sin(2 * latRad)
+                + (15 * eccSquared * eccSquared / 256 + 45 * eccSquared * eccSquared * eccSquared / 1024) * sin(4 * latRad)
+                - (35 * eccSquared * eccSquared * eccSquared / 3072) * sin(6 * latRad))
+
+        val utmEasting = (k0 * N * (A + (1 - T + C) * A * A * A / 6
+                + (5 - 18 * T + T * T + 72 * C - 58 * eccPrimeSquared) * A * A * A * A * A / 120)
+                + 500000.0)
+
+        var utmNorthing = (k0 * (M + N * tan(latRad) * (A * A / 2 + (5 - T + 9 * C + 4 * C * C) * A * A * A * A / 24
+                + (61 - 58 * T + T * T + 600 * C - 330 * eccPrimeSquared) * A * A * A * A * A * A / 720)))
+        
+        if (lat < 0) {
+            utmNorthing += 10000000.0 // Compensação do hemisfério sul
+        }
+        
+        return doubleArrayOf(utmEasting, utmNorthing)
     }
 }
