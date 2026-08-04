@@ -2,13 +2,15 @@ package com.topografia.app
 
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Environment
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import java.io.File
+import java.io.FileWriter
 
-// Esta é a estrutura da nossa "memória" de pontos
 data class PontoTopografico(
     val nome: String,
     val latitude: Double,
@@ -29,15 +31,14 @@ class MainActivity : AppCompatActivity() {
     
     private lateinit var etNomePonto: EditText
     private lateinit var btnGravarPonto: Button
+    private lateinit var btnExportarCsv: Button
     private lateinit var btnConectar: Button
 
-    // Variáveis que seguram a coordenada atual "congelada" para salvar
     private var latAtual: Double = 0.0
     private var lonAtual: Double = 0.0
     private var cotaChaoAtual: Double = 0.0
     private var statusRtkAtual: String = "Desconectado"
 
-    // O Banco de Dados temporário (A lista de pontos)
     private val listaDePontos = mutableListOf<PontoTopografico>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +55,7 @@ class MainActivity : AppCompatActivity() {
         
         etNomePonto = findViewById(R.id.etNomePonto)
         btnGravarPonto = findViewById(R.id.btnGravarPonto)
+        btnExportarCsv = findViewById(R.id.btnExportarCsv)
         btnConectar = findViewById(R.id.btnConectar)
 
         btnConectar.setOnClickListener {
@@ -61,7 +63,6 @@ class MainActivity : AppCompatActivity() {
             processarNMEA(nmeaTeste)
         }
 
-        // AÇÃO DO BOTÃO GRAVAR PONTO
         btnGravarPonto.setOnClickListener {
             val nomeDoPonto = etNomePonto.text.toString()
 
@@ -75,13 +76,50 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // Cria o ponto e salva na lista
             val novoPonto = PontoTopografico(nomeDoPonto, latAtual, lonAtual, cotaChaoAtual, statusRtkAtual)
             listaDePontos.add(novoPonto)
 
-            // Avisa o topógrafo na tela e limpa o nome para o próximo ponto
             Toast.makeText(this, "Ponto '$nomeDoPonto' SALVO! Total: ${listaDePontos.size}", Toast.LENGTH_LONG).show()
             etNomePonto.text.clear()
+        }
+
+        // AÇÃO DO NOVO BOTÃO DE EXPORTAR
+        btnExportarCsv.setOnClickListener {
+            exportarParaCSV()
+        }
+    }
+
+    // FUNÇÃO QUE GERA O ARQUIVO
+    private fun exportarParaCSV() {
+        if (listaDePontos.isEmpty()) {
+            Toast.makeText(this, "Nenhum ponto para exportar!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            // Cria um nome de arquivo único baseado na hora
+            val nomeArquivo = "Levantamento_${System.currentTimeMillis()}.csv"
+            
+            // Acha a pasta "Downloads" do Android
+            val pastaDownloads = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            val arquivo = File(pastaDownloads, nomeArquivo)
+            val escritor = FileWriter(arquivo)
+
+            // Escreve o cabeçalho do arquivo
+            escritor.append("Nome,Latitude,Longitude,Cota,Status\n")
+
+            // Escreve todos os pontos gravados
+            for (ponto in listaDePontos) {
+                escritor.append("${ponto.nome},${ponto.latitude},${ponto.longitude},${ponto.cotaChao},${ponto.statusRtk}\n")
+            }
+
+            escritor.flush()
+            escritor.close()
+
+            Toast.makeText(this, "Arquivo salvo com sucesso na pasta Downloads!", Toast.LENGTH_LONG).show()
+
+        } catch (e: Exception) {
+            Toast.makeText(this, "Erro ao salvar arquivo: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
