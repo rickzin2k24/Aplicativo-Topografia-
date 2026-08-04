@@ -27,13 +27,11 @@ data class PontoTopografico(
 
 class MainActivity : AppCompatActivity() {
 
-    // Ferramentas do Topo
     private lateinit var btnCad: Button
     private lateinit var btnLocacao: Button
     private lateinit var btnCogo: Button
     private lateinit var btnConectar: Button
 
-    // Displays
     private lateinit var tvStatusRTK: TextView
     private lateinit var tvLatitude: TextView
     private lateinit var tvLongitude: TextView
@@ -42,17 +40,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvCota: TextView
     private lateinit var tvResultadoCorteAterro: TextView
     
-    // Motor Gráfico CAD
     private lateinit var mapaTopografico: MapView
     
-    // Inputs e Controles Base
     private lateinit var etAlturaBastao: EditText
     private lateinit var etCotaProjeto: EditText
     private lateinit var etNomePonto: EditText
     private lateinit var btnGravarPonto: ImageButton
     private lateinit var btnExportarCsv: Button
 
-    // Variáveis Globais
     private var latAtual: Double = 0.0
     private var lonAtual: Double = 0.0
     private var norteUtmAtual: Double = 0.0
@@ -62,8 +57,10 @@ class MainActivity : AppCompatActivity() {
     private var statusRtkAtual: String = "Desconectado"
 
     private val listaDePontos = mutableListOf<PontoTopografico>()
+    
+    // Conexão com o Banco de Dados
+    private lateinit var dbHelper: DatabaseHelper
 
-    // Motor Proj4j
     private val crsFactory = CRSFactory()
     private val ctFactory = CoordinateTransformFactory()
     private val wgs84Src = crsFactory.createFromName("EPSG:4326")
@@ -72,13 +69,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Ligando Ferramentas
+        // Inicializa o Banco de Dados
+        dbHelper = DatabaseHelper(this)
+
         btnCad = findViewById(R.id.btnCad)
         btnLocacao = findViewById(R.id.btnLocacao)
         btnCogo = findViewById(R.id.btnCogo)
         btnConectar = findViewById(R.id.btnConectar)
 
-        // Ligando Textos e Inputs
         tvStatusRTK = findViewById(R.id.tvStatusRTK)
         tvLatitude = findViewById(R.id.tvLatitude)
         tvLongitude = findViewById(R.id.tvLongitude)
@@ -92,33 +90,30 @@ class MainActivity : AppCompatActivity() {
         btnGravarPonto = findViewById(R.id.btnGravarPonto)
         btnExportarCsv = findViewById(R.id.btnExportarCsv)
         
-        // Ligando o Mapa
         mapaTopografico = findViewById(R.id.mapaTopografico)
         
-        // O que fazer quando a trena virtual do mapa terminar a conta
+        // RESGATE DE SEGURANÇA: Carrega os pontos do BD ao abrir o app
+        listaDePontos.addAll(dbHelper.buscarTodosPontos())
+        mapaTopografico.listaDePontos = listaDePontos
+        mapaTopografico.invalidate()
+        
+        if (listaDePontos.isNotEmpty()) {
+            Toast.makeText(this, "${listaDePontos.size} pontos recuperados do Banco de Dados!", Toast.LENGTH_SHORT).show()
+        }
+
         mapaTopografico.onMedicaoCalculada = { distancia ->
             Toast.makeText(this, "Distância Trena: ${String.format("%.3f", distancia)} m", Toast.LENGTH_LONG).show()
         }
 
-        // --- AÇÕES DAS FERRAMENTAS DO TOPO ---
-        btnCad.setOnClickListener {
-            Toast.makeText(this, "Ferramenta CAD (DXF / LandXML) será construída aqui!", Toast.LENGTH_SHORT).show()
-        }
-
-        btnLocacao.setOnClickListener {
-            Toast.makeText(this, "Locação Ativada: Interpolação de linha a cada 10m!", Toast.LENGTH_SHORT).show()
-        }
-
-        btnCogo.setOnClickListener {
-            Toast.makeText(this, "Calculadora COGO (Graus e Taludes) selecionada!", Toast.LENGTH_SHORT).show()
-        }
+        btnCad.setOnClickListener { Toast.makeText(this, "Ferramenta CAD", Toast.LENGTH_SHORT).show() }
+        btnLocacao.setOnClickListener { Toast.makeText(this, "Locação Ativada", Toast.LENGTH_SHORT).show() }
+        btnCogo.setOnClickListener { Toast.makeText(this, "Calculadora COGO", Toast.LENGTH_SHORT).show() }
 
         btnConectar.setOnClickListener {
             val nmeaTeste = "\$GPGGA,123519,0854.1234,S,03622.5678,W,4,08,0.9,764.123,M,46.9,M,,*47"
             processarNMEA(nmeaTeste)
         }
 
-        // --- AÇÕES DA BASE ---
         btnGravarPonto.setOnClickListener {
             val nomeDoPonto = etNomePonto.text.toString()
 
@@ -132,19 +127,31 @@ class MainActivity : AppCompatActivity() {
             }
 
             val novoPonto = PontoTopografico(nomeDoPonto, norteUtmAtual, lesteUtmAtual, cotaChaoAtual, zonaUtmAtual, statusRtkAtual)
-            listaDePontos.add(novoPonto)
             
-            // Envia a lista atualizada para o mapa desenhar
+            // Salva na memória do App e no Banco de Dados Físico
+            listaDePontos.add(novoPonto)
+            dbHelper.inserirPonto(novoPonto)
+            
             mapaTopografico.listaDePontos = listaDePontos
             mapaTopografico.invalidate()
 
-            Toast.makeText(this, "Ponto '$nomeDoPonto' SALVO! Total: ${listaDePontos.size}", Toast.LENGTH_SHORT).show()
-            etNomePonto.text.clear()
+            Toast.makeText(this, "Ponto '$nomeDoPonto' SALVO!", Toast.LENGTH_SHORT).show()
+
+            // AUTO-INCREMENTO INTELIGENTE: P1 -> P2, EIXO-01 -> EIXO-02
+            val match = Regex("(\\d+)$").find(nomeDoPonto)
+            if (match != null) {
+                val numStr = match.value
+                val nextNum = numStr.toInt() + 1
+                val newName = nomeDoPonto.dropLast(numStr.length) + String.format("%0${numStr.length}d", nextNum)
+                etNomePonto.setText(newName)
+            } else {
+                etNomePonto.setText("${nomeDoPonto}1")
+            }
+            // Move o cursor de digitação para o final
+            etNomePonto.setSelection(etNomePonto.text.length)
         }
 
-        btnExportarCsv.setOnClickListener {
-            exportarParaCSV()
-        }
+        btnExportarCsv.setOnClickListener { exportarParaCSV() }
     }
 
     private fun exportarParaCSV() {
@@ -167,26 +174,35 @@ class MainActivity : AppCompatActivity() {
             escritor.close()
 
             Toast.makeText(this, "Arquivo P,N,E,Z,D salvo com sucesso!", Toast.LENGTH_LONG).show()
-
         } catch (e: Exception) {
             Toast.makeText(this, "Erro ao exportar: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun processarNMEA(linhaNmea: String) {
-        val partes = linhaNmea.split(",")
-        if (partes[0] == "\$GPGGA" && partes.size > 10) {
-            val latNmea = partes[2]
-            val latDir = partes[3] 
-            val lonNmea = partes[4]
-            val lonDir = partes[5] 
-            val cotaNmeaString = partes[9]
-            val qualidade = partes[6] 
+        // FILTRO DE RUÍDO: Ignora dados sujos ou cortados do Bluetooth
+        if (!linhaNmea.startsWith("$") || !linhaNmea.contains("*")) {
+            tvStatusRTK.text = "RUÍDO/PERDA SINAL"
+            tvStatusRTK.setTextColor(Color.parseColor("#FF9800"))
+            return
+        }
 
-            latAtual = converterNmeaParaGrausDecimais(latNmea, latDir)
-            lonAtual = converterNmeaParaGrausDecimais(lonNmea, lonDir)
+        try {
+            val partes = linhaNmea.split(",")
+            if (partes[0] == "\$GPGGA" && partes.size > 10) {
+                val latNmea = partes[2]
+                val latDir = partes[3] 
+                val lonNmea = partes[4]
+                val lonDir = partes[5] 
+                val cotaNmeaString = partes[9]
+                val qualidade = partes[6] 
 
-            try {
+                // Prevenção de erro: se vier vazio, aborta a leitura
+                if (latNmea.isEmpty() || lonNmea.isEmpty() || cotaNmeaString.isEmpty()) return
+
+                latAtual = converterNmeaParaGrausDecimais(latNmea, latDir)
+                lonAtual = converterNmeaParaGrausDecimais(lonNmea, lonDir)
+
                 val lat = latAtual
                 val lon = lonAtual
                 val zonaUtmNumerica = ((lon + 180) / 6).toInt() + 1
@@ -204,7 +220,6 @@ class MainActivity : AppCompatActivity() {
                 norteUtmAtual = utmCoordinate.y
                 lesteUtmAtual = utmCoordinate.x
                 
-                // Envia a posição da antena para o mapa centralizar a tela
                 mapaTopografico.rtkNorte = norteUtmAtual
                 mapaTopografico.rtkLeste = lesteUtmAtual
                 mapaTopografico.invalidate()
@@ -214,35 +229,29 @@ class MainActivity : AppCompatActivity() {
                 tvNorteUTM.text = "N: ${String.format("%.3f", norteUtmAtual)}"
                 tvLesteUTM.text = "E: ${String.format("%.3f", lesteUtmAtual)}"
 
-            } catch (e: Exception) {
-                tvNorteUTM.text = "Erro UTM"
-            }
+                when (qualidade) {
+                    "4" -> {
+                        statusRtkAtual = "FIXO"
+                        tvStatusRTK.text = "STATUS: FIXO"
+                        tvStatusRTK.setTextColor(Color.parseColor("#00FF00"))
+                    }
+                    "5" -> {
+                        statusRtkAtual = "FLOAT"
+                        tvStatusRTK.text = "STATUS: FLOAT"
+                        tvStatusRTK.setTextColor(Color.parseColor("#FFC107"))
+                    }
+                    else -> {
+                        statusRtkAtual = "AUTÔNOMO"
+                        tvStatusRTK.text = "STATUS: AUTÔNOMO"
+                        tvStatusRTK.setTextColor(Color.parseColor("#FF5252"))
+                    }
+                }
 
-            when (qualidade) {
-                "4" -> {
-                    statusRtkAtual = "FIXO"
-                    tvStatusRTK.text = "STATUS: FIXO"
-                    tvStatusRTK.setTextColor(Color.parseColor("#00FF00")) // Verde limão
-                }
-                "5" -> {
-                    statusRtkAtual = "FLOAT"
-                    tvStatusRTK.text = "STATUS: FLOAT"
-                    tvStatusRTK.setTextColor(Color.parseColor("#FFC107"))
-                }
-                else -> {
-                    statusRtkAtual = "AUTÔNOMO"
-                    tvStatusRTK.text = "STATUS: AUTÔNOMO"
-                    tvStatusRTK.setTextColor(Color.parseColor("#FF5252"))
-                }
-            }
-
-            try {
                 val cotaNmea = cotaNmeaString.toDouble()
                 val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
                 val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: 0.0
 
                 cotaChaoAtual = cotaNmea - alturaBastao
-                
                 tvCota.text = String.format("%.3f", cotaChaoAtual)
 
                 if (cotaProjeto > 0.0) { 
@@ -260,9 +269,11 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     tvResultadoCorteAterro.text = "---"
                 }
-            } catch (e: Exception) {
-                tvResultadoCorteAterro.text = "Erro"
             }
+        } catch (e: Exception) {
+            // Em caso de erro matemático, não quebra o app
+            tvStatusRTK.text = "ERRO DE CÁLCULO"
+            tvStatusRTK.setTextColor(Color.parseColor("#FF5252"))
         }
     }
 
