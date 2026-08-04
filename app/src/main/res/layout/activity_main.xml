@@ -39,13 +39,13 @@
         android:id="@+id/tvCota"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Cota NMEA: ---"
+        android:text="Cota Antena: ---\nCota do Chão: ---"
         android:textSize="22sp"
         android:textStyle="bold"
         android:textColor="#1976D2"
         android:layout_marginBottom="16dp"/>
 
-    <!-- Novos campos para digitar os dados -->
+    <!-- Campos para digitar os dados -->
     <EditText
         android:id="@+id/etAlturaBastao"
         android:layout_width="match_parent"
