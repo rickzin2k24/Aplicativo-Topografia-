@@ -5,7 +5,17 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+
+// Esta é a estrutura da nossa "memória" de pontos
+data class PontoTopografico(
+    val nome: String,
+    val latitude: Double,
+    val longitude: Double,
+    val cotaChao: Double,
+    val statusRtk: String
+)
 
 class MainActivity : AppCompatActivity() {
 
@@ -16,7 +26,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etAlturaBastao: EditText
     private lateinit var etCotaProjeto: EditText
     private lateinit var tvResultadoCorteAterro: TextView
+    
+    private lateinit var etNomePonto: EditText
+    private lateinit var btnGravarPonto: Button
     private lateinit var btnConectar: Button
+
+    // Variáveis que seguram a coordenada atual "congelada" para salvar
+    private var latAtual: Double = 0.0
+    private var lonAtual: Double = 0.0
+    private var cotaChaoAtual: Double = 0.0
+    private var statusRtkAtual: String = "Desconectado"
+
+    // O Banco de Dados temporário (A lista de pontos)
+    private val listaDePontos = mutableListOf<PontoTopografico>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,12 +51,37 @@ class MainActivity : AppCompatActivity() {
         etAlturaBastao = findViewById(R.id.etAlturaBastao)
         etCotaProjeto = findViewById(R.id.etCotaProjeto)
         tvResultadoCorteAterro = findViewById(R.id.tvResultadoCorteAterro)
+        
+        etNomePonto = findViewById(R.id.etNomePonto)
+        btnGravarPonto = findViewById(R.id.btnGravarPonto)
         btnConectar = findViewById(R.id.btnConectar)
 
         btnConectar.setOnClickListener {
-            // Nova string NMEA de teste com coordenadas Sul (S) e Oeste (W)
             val nmeaTeste = "\$GPGGA,123519,0854.1234,S,03622.5678,W,4,08,0.9,764.123,M,46.9,M,,*47"
             processarNMEA(nmeaTeste)
+        }
+
+        // AÇÃO DO BOTÃO GRAVAR PONTO
+        btnGravarPonto.setOnClickListener {
+            val nomeDoPonto = etNomePonto.text.toString()
+
+            if (nomeDoPonto.isEmpty()) {
+                Toast.makeText(this, "Erro: Digite um nome para o ponto!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            if (latAtual == 0.0 && lonAtual == 0.0) {
+                Toast.makeText(this, "Erro: Nenhuma coordenada lida ainda!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // Cria o ponto e salva na lista
+            val novoPonto = PontoTopografico(nomeDoPonto, latAtual, lonAtual, cotaChaoAtual, statusRtkAtual)
+            listaDePontos.add(novoPonto)
+
+            // Avisa o topógrafo na tela e limpa o nome para o próximo ponto
+            Toast.makeText(this, "Ponto '$nomeDoPonto' SALVO! Total: ${listaDePontos.size}", Toast.LENGTH_LONG).show()
+            etNomePonto.text.clear()
         }
     }
 
@@ -43,7 +90,6 @@ class MainActivity : AppCompatActivity() {
         
         if (partes[0] == "\$GPGGA" && partes.size > 10) {
             
-            // Agora pegamos o número e também a letra da direção (N/S, E/W)
             val latNmea = partes[2]
             val latDir = partes[3] 
             val lonNmea = partes[4]
@@ -51,24 +97,25 @@ class MainActivity : AppCompatActivity() {
             val cotaNmeaString = partes[9]
             val qualidade = partes[6] 
 
-            // Convertendo a string bruta do NMEA para Graus Decimais exatos
-            val latGraus = converterNmeaParaGrausDecimais(latNmea, latDir)
-            val lonGraus = converterNmeaParaGrausDecimais(lonNmea, lonDir)
+            latAtual = converterNmeaParaGrausDecimais(latNmea, latDir)
+            lonAtual = converterNmeaParaGrausDecimais(lonNmea, lonDir)
 
-            // Atualizamos a tela mostrando a coordenada com 6 casas decimais de precisão
-            tvLatitude.text = "Lat: ${String.format("%.6f", latGraus)}°"
-            tvLongitude.text = "Lon: ${String.format("%.6f", lonGraus)}°"
+            tvLatitude.text = "Lat: ${String.format("%.6f", latAtual)}°"
+            tvLongitude.text = "Lon: ${String.format("%.6f", lonAtual)}°"
 
             when (qualidade) {
                 "4" -> {
+                    statusRtkAtual = "FIXO"
                     tvStatusRTK.text = "STATUS: FIXO"
                     tvStatusRTK.setTextColor(Color.parseColor("#4CAF50"))
                 }
                 "5" -> {
+                    statusRtkAtual = "FLOAT"
                     tvStatusRTK.text = "STATUS: FLOAT"
                     tvStatusRTK.setTextColor(Color.parseColor("#FFC107"))
                 }
                 else -> {
+                    statusRtkAtual = "AUTÔNOMO"
                     tvStatusRTK.text = "STATUS: AUTÔNOMO"
                     tvStatusRTK.setTextColor(Color.parseColor("#D32F2F"))
                 }
@@ -79,12 +126,12 @@ class MainActivity : AppCompatActivity() {
                 val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
                 val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: 0.0
 
-                val cotaTerreno = cotaNmea - alturaBastao
+                cotaChaoAtual = cotaNmea - alturaBastao
                 
-                tvCota.text = "Cota Antena: $cotaNmeaString m\nCota do Chão: ${String.format("%.3f", cotaTerreno)} m"
+                tvCota.text = "Cota Antena: $cotaNmeaString m\nCota do Chão: ${String.format("%.3f", cotaChaoAtual)} m"
 
                 if (cotaProjeto > 0.0) { 
-                    val diferenca = cotaProjeto - cotaTerreno
+                    val diferenca = cotaProjeto - cotaChaoAtual
 
                     if (diferenca > 0) {
                         tvResultadoCorteAterro.text = "ATERRAR: ${String.format("%.3f", diferenca)} m"
@@ -107,27 +154,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // A MÁGICA DA CONVERSÃO GEOGRÁFICA
     private fun converterNmeaParaGrausDecimais(nmeaValor: String, direcao: String): Double {
         if (nmeaValor.isEmpty()) return 0.0
         
-        // A lógica do NMEA é fundir graus e minutos (ex: 0854.1234)
-        // O ponto decimal nos ajuda a separar as casas
         val pontoIndex = nmeaValor.indexOf('.')
         if (pontoIndex == -1) return 0.0
 
-        // Os minutos são sempre os 2 dígitos colados antes do ponto + os decimais (ex: 54.1234)
-        // Os graus é tudo o que sobrar antes disso (ex: 08)
         val grausString = nmeaValor.substring(0, pontoIndex - 2)
         val minutosString = nmeaValor.substring(pontoIndex - 2)
 
         val graus = grausString.toDoubleOrNull() ?: 0.0
         val minutos = minutosString.toDoubleOrNull() ?: 0.0
 
-        // Transforma os minutos em graus dividindo por 60 e soma
         var grausDecimais = graus + (minutos / 60.0)
 
-        // Aplica a regra do hemisfério (Sul ou Oeste ficam negativos)
         if (direcao == "S" || direcao == "W") {
             grausDecimais *= -1
         }
