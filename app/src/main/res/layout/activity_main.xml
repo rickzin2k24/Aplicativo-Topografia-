@@ -2,9 +2,9 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#121212"> <!-- Fundo Escuro Moderno -->
+    android:background="#121212">
 
-    <!-- 1. BARRA DE FERRAMENTAS (TOPO) -->
+    <!-- BARRA DE FERRAMENTAS -->
     <LinearLayout
         android:id="@+id/llTools"
         android:layout_width="match_parent"
@@ -13,47 +13,53 @@
         android:background="#1E1E1E"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="8dp">
+        android:padding="4dp">
 
         <Button
+            android:id="@+id/btnCad"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="⚙️"
-            android:textSize="20sp"
+            android:text="🗺️ CAD"
+            android:textSize="12sp"
+            android:textColor="#FFFFFF"
             android:backgroundTint="#333333"
             android:layout_marginEnd="4dp"/>
         
         <Button
+            android:id="@+id/btnLocacao"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="📚"
-            android:textSize="20sp"
+            android:text="🚩 LOCAR"
+            android:textSize="12sp"
+            android:textColor="#FFFFFF"
             android:backgroundTint="#333333"
             android:layout_marginEnd="4dp"/>
 
         <Button
+            android:id="@+id/btnCogo"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="📏"
-            android:textSize="20sp"
+            android:text="📐 COGO"
+            android:textSize="12sp"
+            android:textColor="#FFFFFF"
             android:backgroundTint="#333333"
             android:layout_marginEnd="4dp"/>
 
-        <!-- O seu botão de conectar/simular agora é uma ferramenta no topo! -->
         <Button
             android:id="@+id/btnConectar"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="📡"
-            android:textSize="20sp"
+            android:text="📡 RTK"
+            android:textSize="12sp"
+            android:textColor="#FFFFFF"
             android:backgroundTint="#4CAF50"/>
     </LinearLayout>
 
-    <!-- 4. BOTÃO DE EXPORTAR (BASE) -->
+    <!-- BOTÃO DE EXPORTAR -->
     <Button
         android:id="@+id/btnExportarCsv"
         android:layout_width="match_parent"
@@ -66,7 +72,7 @@
         android:textColor="#FFFFFF"
         android:layout_margin="8dp"/>
 
-    <!-- 3. CONTROLES DE CAMPO (ACIMA DO BOTÃO EXPORTAR) -->
+    <!-- CONTROLES DE CAMPO -->
     <RelativeLayout
         android:id="@+id/rlBottomControls"
         android:layout_width="match_parent"
@@ -75,7 +81,6 @@
         android:background="#1E1E1E"
         android:padding="16dp">
 
-        <!-- Cota Atual (Esquerda) -->
         <LinearLayout
             android:id="@+id/llCotaBase"
             android:layout_width="wrap_content"
@@ -100,7 +105,6 @@
                 android:textStyle="bold"/>
         </LinearLayout>
 
-        <!-- Nome do Ponto (Centro) -->
         <EditText
             android:id="@+id/etNomePonto"
             android:layout_width="120dp"
@@ -117,7 +121,6 @@
             android:backgroundTint="#4CAF50"
             android:gravity="center"/>
 
-        <!-- Botão Redondo (Direita) -->
         <ImageButton
             android:id="@+id/btnGravarPonto"
             android:layout_width="70dp"
@@ -129,24 +132,19 @@
             android:tint="#FFFFFF"/>
     </RelativeLayout>
 
-    <!-- 2. TELA DO MAPA (MEIO - OCUPA TODO O ESPAÇO RESTANTE) -->
+    <!-- TELA DO MAPA (MOTOR GRÁFICO CAD) -->
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_below="@id/llTools"
         android:layout_above="@id/rlBottomControls"
-        android:background="#191919"> <!-- Cor do terreno -->
+        android:background="#191919">
 
-        <!-- Ícone do Rover (Você) no centro da tela -->
-        <ImageView
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_centerInParent="true"
-            android:src="@android:drawable/ic_media_play"
-            android:rotation="-90"
-            android:tint="#00FF00"/>
+        <com.topografia.app.MapView
+            android:id="@+id/mapaTopografico"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
 
-        <!-- PAINEL FLUTUANTE HUD (Esquerda) - Posição -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -197,7 +195,6 @@
                 android:textSize="12sp"/>
         </LinearLayout>
 
-        <!-- PAINEL FLUTUANTE HUD (Direita) - Projeto -->
         <LinearLayout
             android:layout_width="140dp"
             android:layout_height="wrap_content"
@@ -241,6 +238,5 @@
                 android:gravity="center"
                 android:layout_marginTop="8dp"/>
         </LinearLayout>
-
     </RelativeLayout>
 </RelativeLayout>
