@@ -22,7 +22,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Ligando o código aos novos elementos da tela
+        // Ligando o código aos elementos da tela
         tvStatusRTK = findViewById(R.id.tvStatusRTK)
         tvLatitude = findViewById(R.id.tvLatitude)
         tvLongitude = findViewById(R.id.tvLongitude)
@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private fun processarNMEA(linhaNmea: String) {
         val partes = linhaNmea.split(",")
         
+        // Verifica se é a linha que contém as coordenadas 3D (GPGGA)
         if (partes[0] == "\$GPGGA" && partes.size > 10) {
             
             val lat = partes[2]
@@ -51,45 +52,44 @@ class MainActivity : AppCompatActivity() {
 
             tvLatitude.text = "Lat: $lat"
             tvLongitude.text = "Lon: $lon"
-            tvCota.text = "Cota NMEA: $cotaNmeaString m"
 
+            // Verifica o status do RTK
             when (qualidade) {
                 "4" -> {
                     tvStatusRTK.text = "STATUS: FIXO"
-                    tvStatusRTK.setTextColor(Color.parseColor("#4CAF50"))
+                    tvStatusRTK.setTextColor(Color.parseColor("#4CAF50")) // Verde
                 }
                 "5" -> {
                     tvStatusRTK.text = "STATUS: FLOAT"
-                    tvStatusRTK.setTextColor(Color.parseColor("#FFC107"))
+                    tvStatusRTK.setTextColor(Color.parseColor("#FFC107")) // Amarelo
                 }
                 else -> {
                     tvStatusRTK.text = "STATUS: AUTÔNOMO"
-                    tvStatusRTK.setTextColor(Color.parseColor("#D32F2F"))
+                    tvStatusRTK.setTextColor(Color.parseColor("#D32F2F")) // Vermelho
                 }
             }
 
             // --- INÍCIO DO CÁLCULO TOPOGRÁFICO ---
             try {
-                // Transforma os textos em números decimais (Double) para poder fazer conta
+                // Transforma os textos em números decimais
                 val cotaNmea = cotaNmeaString.toDouble()
-                
-                // Pega o que você digitou na tela. Se deixar em branco, considera 0.0
                 val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
                 val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: 0.0
 
                 // 1. Calcula a cota real do chão (subtraindo o bastão)
                 val cotaTerreno = cotaNmea - alturaBastao
+                
+                // Atualiza a tela mostrando a cota da Antena e a do Chão juntas
+                tvCota.text = "Cota Antena: $cotaNmeaString m\nCota do Chão: ${String.format("%.3f", cotaTerreno)} m"
 
                 // 2. Calcula a diferença para o projeto (Corte ou Aterro)
-                if (cotaProjeto > 0.0) { // Só calcula se você tiver digitado um grade válido
+                if (cotaProjeto > 0.0) { 
                     val diferenca = cotaProjeto - cotaTerreno
 
                     if (diferenca > 0) {
-                        // Precisa subir (Aterrar)
                         tvResultadoCorteAterro.text = "ATERRAR: ${String.format("%.3f", diferenca)} m"
                         tvResultadoCorteAterro.setTextColor(Color.parseColor("#1976D2")) // Azul
                     } else if (diferenca < 0) {
-                        // Precisa descer (Cortar). Multiplica por -1 para não mostrar o sinal negativo.
                         tvResultadoCorteAterro.text = "CORTAR: ${String.format("%.3f", diferenca * -1)} m"
                         tvResultadoCorteAterro.setTextColor(Color.parseColor("#D32F2F")) // Vermelho
                     } else {
@@ -97,7 +97,7 @@ class MainActivity : AppCompatActivity() {
                         tvResultadoCorteAterro.setTextColor(Color.parseColor("#4CAF50")) // Verde
                     }
                 } else {
-                    tvResultadoCorteAterro.text = "Cota no Chão: ${String.format("%.3f", cotaTerreno)} m"
+                    tvResultadoCorteAterro.text = "Aguardando Grade..."
                     tvResultadoCorteAterro.setTextColor(Color.parseColor("#000000")) // Preto
                 }
 
