@@ -1,85 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="24dp"
-    android:gravity="center_horizontal"
     android:background="#FFFFFF">
 
-    <TextView
-        android:id="@+id/tvStatusRTK"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="STATUS: Desconectado"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:textColor="#D32F2F"
-        android:gravity="center"
-        android:layout_marginBottom="16dp"/>
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:gravity="center_horizontal">
 
-    <TextView
-        android:id="@+id/tvLatitude"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Lat: ---"
-        android:textSize="20sp"
-        android:textColor="#000000"/>
+        <TextView
+            android:id="@+id/tvStatusRTK"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="STATUS: Desconectado"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="#D32F2F"
+            android:gravity="center"
+            android:layout_marginBottom="16dp"/>
 
-    <TextView
-        android:id="@+id/tvLongitude"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Lon: ---"
-        android:textSize="20sp"
-        android:textColor="#000000"
-        android:layout_marginBottom="16dp"/>
+        <TextView
+            android:id="@+id/tvLatitude"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Lat: ---"
+            android:textSize="20sp"
+            android:textColor="#000000"/>
 
-    <TextView
-        android:id="@+id/tvCota"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Cota Antena: ---\nCota do Chão: ---"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:textColor="#1976D2"
-        android:layout_marginBottom="16dp"/>
+        <TextView
+            android:id="@+id/tvLongitude"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Lon: ---"
+            android:textSize="20sp"
+            android:textColor="#000000"
+            android:layout_marginBottom="16dp"/>
 
-    <!-- Campos para digitar os dados -->
-    <EditText
-        android:id="@+id/etAlturaBastao"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Altura do Bastão (m)"
-        android:inputType="numberDecimal"
-        android:layout_marginBottom="8dp"/>
+        <TextView
+            android:id="@+id/tvCota"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Cota Antena: ---\nCota do Chão: ---"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="#1976D2"
+            android:layout_marginBottom="16dp"/>
 
-    <EditText
-        android:id="@+id/etCotaProjeto"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Cota do Grade / Projeto (m)"
-        android:inputType="numberDecimal"
-        android:layout_marginBottom="16dp"/>
+        <EditText
+            android:id="@+id/etAlturaBastao"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Altura do Bastão (m)"
+            android:inputType="numberDecimal"
+            android:layout_marginBottom="8dp"/>
 
-    <!-- Painel de resultado do Corte/Aterro -->
-    <TextView
-        android:id="@+id/tvResultadoCorteAterro"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="---"
-        android:textSize="28sp"
-        android:textStyle="bold"
-        android:gravity="center"
-        android:layout_marginBottom="24dp"/>
+        <EditText
+            android:id="@+id/etCotaProjeto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Cota do Grade / Projeto (m)"
+            android:inputType="numberDecimal"
+            android:layout_marginBottom="16dp"/>
 
-    <Button
-        android:id="@+id/btnConectar"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="SIMULAR LEITURA RTK"
-        android:textSize="16sp"
-        android:backgroundTint="#4CAF50"
-        android:textColor="#FFFFFF"/>
+        <TextView
+            android:id="@+id/tvResultadoCorteAterro"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="---"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="24dp"/>
 
-</LinearLayout>
+        <!-- LINHA DIVISÓRIA PARA O MÓDULO DE COLETA -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:background="#E0E0E0"
+            android:layout_marginBottom="24dp"/>
+
+        <EditText
+            android:id="@+id/etNomePonto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Nome / Descrição do Ponto (Ex: Eixo)"
+            android:inputType="textCapCharacters"
+            android:layout_marginBottom="16dp"/>
+
+        <Button
+            android:id="@+id/btnGravarPonto"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="GRAVAR PONTO"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:backgroundTint="#1976D2"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="16dp"/>
+
+        <Button
+            android:id="@+id/btnConectar"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="SIMULAR LEITURA RTK"
+            android:textSize="14sp"
+            android:backgroundTint="#4CAF50"
+            android:textColor="#FFFFFF"/>
+
+    </LinearLayout>
+</ScrollView>
