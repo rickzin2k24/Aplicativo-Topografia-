@@ -22,7 +22,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Ligando o código aos elementos da tela
         tvStatusRTK = findViewById(R.id.tvStatusRTK)
         tvLatitude = findViewById(R.id.tvLatitude)
         tvLongitude = findViewById(R.id.tvLongitude)
@@ -33,8 +32,8 @@ class MainActivity : AppCompatActivity() {
         btnConectar = findViewById(R.id.btnConectar)
 
         btnConectar.setOnClickListener {
-            // Nossa linha NMEA de teste simulando a antena
-            val nmeaTeste = "\$GPGGA,123519,4807.038,N,01131.000,E,4,08,0.9,764.123,M,46.9,M,,*47"
+            // Nova string NMEA de teste com coordenadas Sul (S) e Oeste (W)
+            val nmeaTeste = "\$GPGGA,123519,0854.1234,S,03622.5678,W,4,08,0.9,764.123,M,46.9,M,,*47"
             processarNMEA(nmeaTeste)
         }
     }
@@ -42,68 +41,97 @@ class MainActivity : AppCompatActivity() {
     private fun processarNMEA(linhaNmea: String) {
         val partes = linhaNmea.split(",")
         
-        // Verifica se é a linha que contém as coordenadas 3D (GPGGA)
         if (partes[0] == "\$GPGGA" && partes.size > 10) {
             
-            val lat = partes[2]
-            val lon = partes[4]
+            // Agora pegamos o número e também a letra da direção (N/S, E/W)
+            val latNmea = partes[2]
+            val latDir = partes[3] 
+            val lonNmea = partes[4]
+            val lonDir = partes[5] 
             val cotaNmeaString = partes[9]
             val qualidade = partes[6] 
 
-            tvLatitude.text = "Lat: $lat"
-            tvLongitude.text = "Lon: $lon"
+            // Convertendo a string bruta do NMEA para Graus Decimais exatos
+            val latGraus = converterNmeaParaGrausDecimais(latNmea, latDir)
+            val lonGraus = converterNmeaParaGrausDecimais(lonNmea, lonDir)
 
-            // Verifica o status do RTK
+            // Atualizamos a tela mostrando a coordenada com 6 casas decimais de precisão
+            tvLatitude.text = "Lat: ${String.format("%.6f", latGraus)}°"
+            tvLongitude.text = "Lon: ${String.format("%.6f", lonGraus)}°"
+
             when (qualidade) {
                 "4" -> {
                     tvStatusRTK.text = "STATUS: FIXO"
-                    tvStatusRTK.setTextColor(Color.parseColor("#4CAF50")) // Verde
+                    tvStatusRTK.setTextColor(Color.parseColor("#4CAF50"))
                 }
                 "5" -> {
                     tvStatusRTK.text = "STATUS: FLOAT"
-                    tvStatusRTK.setTextColor(Color.parseColor("#FFC107")) // Amarelo
+                    tvStatusRTK.setTextColor(Color.parseColor("#FFC107"))
                 }
                 else -> {
                     tvStatusRTK.text = "STATUS: AUTÔNOMO"
-                    tvStatusRTK.setTextColor(Color.parseColor("#D32F2F")) // Vermelho
+                    tvStatusRTK.setTextColor(Color.parseColor("#D32F2F"))
                 }
             }
 
-            // --- INÍCIO DO CÁLCULO TOPOGRÁFICO ---
             try {
-                // Transforma os textos em números decimais
                 val cotaNmea = cotaNmeaString.toDouble()
                 val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
                 val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: 0.0
 
-                // 1. Calcula a cota real do chão (subtraindo o bastão)
                 val cotaTerreno = cotaNmea - alturaBastao
                 
-                // Atualiza a tela mostrando a cota da Antena e a do Chão juntas
                 tvCota.text = "Cota Antena: $cotaNmeaString m\nCota do Chão: ${String.format("%.3f", cotaTerreno)} m"
 
-                // 2. Calcula a diferença para o projeto (Corte ou Aterro)
                 if (cotaProjeto > 0.0) { 
                     val diferenca = cotaProjeto - cotaTerreno
 
                     if (diferenca > 0) {
                         tvResultadoCorteAterro.text = "ATERRAR: ${String.format("%.3f", diferenca)} m"
-                        tvResultadoCorteAterro.setTextColor(Color.parseColor("#1976D2")) // Azul
+                        tvResultadoCorteAterro.setTextColor(Color.parseColor("#1976D2"))
                     } else if (diferenca < 0) {
                         tvResultadoCorteAterro.text = "CORTAR: ${String.format("%.3f", diferenca * -1)} m"
-                        tvResultadoCorteAterro.setTextColor(Color.parseColor("#D32F2F")) // Vermelho
+                        tvResultadoCorteAterro.setTextColor(Color.parseColor("#D32F2F"))
                     } else {
                         tvResultadoCorteAterro.text = "NO GREIDE (0.000 m)"
-                        tvResultadoCorteAterro.setTextColor(Color.parseColor("#4CAF50")) // Verde
+                        tvResultadoCorteAterro.setTextColor(Color.parseColor("#4CAF50"))
                     }
                 } else {
                     tvResultadoCorteAterro.text = "Aguardando Grade..."
-                    tvResultadoCorteAterro.setTextColor(Color.parseColor("#000000")) // Preto
+                    tvResultadoCorteAterro.setTextColor(Color.parseColor("#000000"))
                 }
 
             } catch (e: Exception) {
                 tvResultadoCorteAterro.text = "Erro no cálculo"
             }
         }
+    }
+
+    // A MÁGICA DA CONVERSÃO GEOGRÁFICA
+    private fun converterNmeaParaGrausDecimais(nmeaValor: String, direcao: String): Double {
+        if (nmeaValor.isEmpty()) return 0.0
+        
+        // A lógica do NMEA é fundir graus e minutos (ex: 0854.1234)
+        // O ponto decimal nos ajuda a separar as casas
+        val pontoIndex = nmeaValor.indexOf('.')
+        if (pontoIndex == -1) return 0.0
+
+        // Os minutos são sempre os 2 dígitos colados antes do ponto + os decimais (ex: 54.1234)
+        // Os graus é tudo o que sobrar antes disso (ex: 08)
+        val grausString = nmeaValor.substring(0, pontoIndex - 2)
+        val minutosString = nmeaValor.substring(pontoIndex - 2)
+
+        val graus = grausString.toDoubleOrNull() ?: 0.0
+        val minutos = minutosString.toDoubleOrNull() ?: 0.0
+
+        // Transforma os minutos em graus dividindo por 60 e soma
+        var grausDecimais = graus + (minutos / 60.0)
+
+        // Aplica a regra do hemisfério (Sul ou Oeste ficam negativos)
+        if (direcao == "S" || direcao == "W") {
+            grausDecimais *= -1
+        }
+
+        return grausDecimais
     }
 }
