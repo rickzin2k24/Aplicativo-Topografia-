@@ -1,25 +1,33 @@
 package com.topografia.app
 
+import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
-import android.os.Environment
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import java.io.File
-import java.io.FileWriter
+import java.io.OutputStreamWriter
+
+import org.locationtech.proj4j.CRSFactory
+import org.locationtech.proj4j.CoordinateTransformFactory
+import org.locationtech.proj4j.ProjCoordinate
 import kotlin.math.*
 
+// 1. ESTRUTURA ATUALIZADA DO PONTO
 data class PontoTopografico(
     val nome: String,
     val norteUtm: Double,
     val lesteUtm: Double,
     val cotaChao: Double,
     val zonaUtm: String,
-    val statusRtk: String
+    val statusRtk: String,
+    val nomeProjeto: String // O ponto agora sabe onde ele mora
 )
 
 class MainActivity : AppCompatActivity() {
@@ -55,6 +63,31 @@ class MainActivity : AppCompatActivity() {
 
     private val listaDePontos = mutableListOf<PontoTopografico>()
     private lateinit var dbHelper: DatabaseHelper
+    
+    // VARIÁVEL DE GESTÃO DO PROJETO ATUAL
+    private var projetoAtual: String = "Projeto_Padrao"
+
+    // 2. MOTOR DE EXPORTAÇÃO NATIVO (Escolher Pasta)
+    private val exportarLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                try {
+                    val outputStream = contentResolver.openOutputStream(uri)
+                    val escritor = OutputStreamWriter(outputStream)
+                    
+                    escritor.append("Ponto,Norte(m),Leste(m),Elevacao(m),Codigo,Projeto\n")
+                    for (ponto in listaDePontos) {
+                        escritor.append("${ponto.nome},${String.format("%.3f", ponto.norteUtm)},${String.format("%.3f", ponto.lesteUtm)},${String.format("%.3f", ponto.cotaChao)},${ponto.zonaUtm},${ponto.nomeProjeto}\n")
+                    }
+                    escritor.flush()
+                    escritor.close()
+                    Toast.makeText(this, "Arquivo CSV salvo na pasta escolhida!", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Erro ao salvar arquivo.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,15 +115,16 @@ class MainActivity : AppCompatActivity() {
         
         mapaTopografico = findViewById(R.id.mapaTopografico)
         
-        listaDePontos.addAll(dbHelper.buscarTodosPontos())
-        mapaTopografico.listaDePontos = listaDePontos
-        mapaTopografico.invalidate()
+        // Pede para o usuário escolher ou criar um projeto ao abrir o App
+        mostrarDialogoDeProjeto()
 
         mapaTopografico.onMedicaoCalculada = { distancia ->
             Toast.makeText(this, "Distância Trena: ${String.format("%.3f", distancia)} m", Toast.LENGTH_LONG).show()
         }
 
-        btnCad.setOnClickListener { Toast.makeText(this, "Ferramenta CAD", Toast.LENGTH_SHORT).show() }
+        // O Botão CAD agora pode servir para trocar de projeto no futuro
+        btnCad.setOnClickListener { mostrarDialogoDeProjeto() }
+        
         btnLocacao.setOnClickListener { Toast.makeText(this, "Locação Ativada", Toast.LENGTH_SHORT).show() }
         btnCogo.setOnClickListener { Toast.makeText(this, "Calculadora COGO", Toast.LENGTH_SHORT).show() }
 
@@ -111,7 +145,8 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            val novoPonto = PontoTopografico(nomeDoPonto, norteUtmAtual, lesteUtmAtual, cotaChaoAtual, zonaUtmAtual, statusRtkAtual)
+            // Grava o ponto já carimbado com o nome do projeto atual
+            val novoPonto = PontoTopografico(nomeDoPonto, norteUtmAtual, lesteUtmAtual, cotaChaoAtual, zonaUtmAtual, statusRtkAtual, projetoAtual)
             
             listaDePontos.add(novoPonto)
             dbHelper.inserirPonto(novoPonto)
@@ -119,7 +154,7 @@ class MainActivity : AppCompatActivity() {
             mapaTopografico.listaDePontos = listaDePontos
             mapaTopografico.invalidate()
 
-            Toast.makeText(this, "Ponto '$nomeDoPonto' SALVO!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Ponto salvo no projeto: $projetoAtual", Toast.LENGTH_SHORT).show()
 
             val match = Regex("(\\d+)$").find(nomeDoPonto)
             if (match != null) {
@@ -133,40 +168,53 @@ class MainActivity : AppCompatActivity() {
             etNomePonto.setSelection(etNomePonto.text.length)
         }
 
-        btnExportarCsv.setOnClickListener { exportarParaCSV() }
+        btnExportarCsv.setOnClickListener {
+            if (listaDePontos.isEmpty()) {
+                Toast.makeText(this, "O projeto $projetoAtual está vazio!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            
+            // Abre a tela nativa do Android para o topógrafo escolher a pasta e confirmar o nome do arquivo
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "text/csv"
+                putExtra(Intent.EXTRA_TITLE, "${projetoAtual}_AsBuilt.csv") // Nome sugerido do arquivo
+            }
+            exportarLauncher.launch(intent)
+        }
     }
 
-    private fun exportarParaCSV() {
-        if (listaDePontos.isEmpty()) {
-            Toast.makeText(this, "Nenhum ponto para exportar!", Toast.LENGTH_SHORT).show()
-            return
-        }
-        try {
-            val nomeArquivo = "Levantamento_UTM_${System.currentTimeMillis()}.csv"
-            val pastaDownloads = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            val arquivo = File(pastaDownloads, nomeArquivo)
-            val escritor = FileWriter(arquivo)
+    // 3. CAIXA DE DIÁLOGO PARA CRIAR/SELECIONAR PROJETO
+    private fun mostrarDialogoDeProjeto() {
+        val input = EditText(this)
+        input.hint = "Ex: Loteamento_A"
+        input.setText(projetoAtual)
 
-            escritor.append("Ponto,Norte(m),Leste(m),Elevacao(m),Codigo\n")
-
-            for (ponto in listaDePontos) {
-                escritor.append("${ponto.nome},${String.format("%.3f", ponto.norteUtm)},${String.format("%.3f", ponto.lesteUtm)},${String.format("%.3f", ponto.cotaChao)},${ponto.zonaUtm}\n")
+        AlertDialog.Builder(this)
+            .setTitle("Gerenciador de Projetos")
+            .setMessage("Digite o nome da obra/projeto atual:")
+            .setView(input)
+            .setPositiveButton("Confirmar") { _, _ ->
+                val nomeDigitado = input.text.toString().trim()
+                if (nomeDigitado.isNotEmpty()) {
+                    projetoAtual = nomeDigitado
+                    btnCad.text = "🗺️ $projetoAtual" // Atualiza o botão lá em cima
+                    
+                    // Limpa a tela e busca só os pontos dessa obra no Banco de Dados
+                    listaDePontos.clear()
+                    listaDePontos.addAll(dbHelper.buscarPontosPorProjeto(projetoAtual))
+                    mapaTopografico.listaDePontos = listaDePontos
+                    mapaTopografico.invalidate()
+                    
+                    Toast.makeText(this, "Projeto $projetoAtual carregado!", Toast.LENGTH_SHORT).show()
+                }
             }
-            escritor.flush()
-            escritor.close()
-
-            Toast.makeText(this, "Arquivo P,N,E,Z,D salvo com sucesso!", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Erro ao exportar: ${e.message}", Toast.LENGTH_LONG).show()
-        }
+            .setCancelable(false)
+            .show()
     }
 
     private fun processarNMEA(linhaNmea: String) {
-        if (!linhaNmea.startsWith("$") || !linhaNmea.contains("*")) {
-            tvStatusRTK.text = "RUÍDO/PERDA SINAL"
-            tvStatusRTK.setTextColor(Color.parseColor("#FF9800"))
-            return
-        }
+        if (!linhaNmea.startsWith("$") || !linhaNmea.contains("*")) return
 
         try {
             val partes = linhaNmea.split(",")
@@ -183,7 +231,6 @@ class MainActivity : AppCompatActivity() {
                 latAtual = converterNmeaParaGrausDecimais(latNmea, latDir)
                 lonAtual = converterNmeaParaGrausDecimais(lonNmea, lonDir)
 
-                // NOVO CÁLCULO UTM 100% NATIVO (Sem bibliotecas externas)
                 val utmCoords = converterGrausParaUTM(latAtual, lonAtual)
                 lesteUtmAtual = utmCoords[0]
                 norteUtmAtual = utmCoords[1]
@@ -242,10 +289,7 @@ class MainActivity : AppCompatActivity() {
                     tvResultadoCorteAterro.text = "---"
                 }
             }
-        } catch (e: Exception) {
-            tvStatusRTK.text = "ERRO DE CÁLCULO"
-            tvStatusRTK.setTextColor(Color.parseColor("#FF5252"))
-        }
+        } catch (e: Exception) {}
     }
 
     private fun converterNmeaParaGrausDecimais(nmeaValor: String, direcao: String): Double {
@@ -264,7 +308,6 @@ class MainActivity : AppCompatActivity() {
         return grausDecimais
     }
 
-    // FÓRMULA NATIVA DE WGS84 PARA UTM (Substitui a biblioteca externa)
     private fun converterGrausParaUTM(lat: Double, lon: Double): DoubleArray {
         val a = 6378137.0
         val eccSquared = 0.00669438
@@ -295,7 +338,7 @@ class MainActivity : AppCompatActivity() {
                 + (61 - 58 * T + T * T + 600 * C - 330 * eccPrimeSquared) * A * A * A * A * A * A / 720)))
         
         if (lat < 0) {
-            utmNorthing += 10000000.0 // Compensação do hemisfério sul
+            utmNorthing += 10000000.0
         }
         
         return doubleArrayOf(utmEasting, utmNorthing)
