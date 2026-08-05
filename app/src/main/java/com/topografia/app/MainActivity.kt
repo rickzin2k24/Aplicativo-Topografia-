@@ -12,14 +12,11 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import java.io.File
+import java.io.FileWriter
 import java.io.OutputStreamWriter
-
-import org.locationtech.proj4j.CRSFactory
-import org.locationtech.proj4j.CoordinateTransformFactory
-import org.locationtech.proj4j.ProjCoordinate
 import kotlin.math.*
 
-// 1. ESTRUTURA ATUALIZADA DO PONTO
 data class PontoTopografico(
     val nome: String,
     val norteUtm: Double,
@@ -27,7 +24,7 @@ data class PontoTopografico(
     val cotaChao: Double,
     val zonaUtm: String,
     val statusRtk: String,
-    val nomeProjeto: String // O ponto agora sabe onde ele mora
+    val nomeProjeto: String
 )
 
 class MainActivity : AppCompatActivity() {
@@ -63,18 +60,14 @@ class MainActivity : AppCompatActivity() {
 
     private val listaDePontos = mutableListOf<PontoTopografico>()
     private lateinit var dbHelper: DatabaseHelper
-    
-    // VARIÁVEL DE GESTÃO DO PROJETO ATUAL
     private var projetoAtual: String = "Projeto_Padrao"
 
-    // 2. MOTOR DE EXPORTAÇÃO NATIVO (Escolher Pasta)
     private val exportarLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.data?.let { uri ->
                 try {
                     val outputStream = contentResolver.openOutputStream(uri)
                     val escritor = OutputStreamWriter(outputStream)
-                    
                     escritor.append("Ponto,Norte(m),Leste(m),Elevacao(m),Codigo,Projeto\n")
                     for (ponto in listaDePontos) {
                         escritor.append("${ponto.nome},${String.format("%.3f", ponto.norteUtm)},${String.format("%.3f", ponto.lesteUtm)},${String.format("%.3f", ponto.cotaChao)},${ponto.zonaUtm},${ponto.nomeProjeto}\n")
@@ -82,9 +75,7 @@ class MainActivity : AppCompatActivity() {
                     escritor.flush()
                     escritor.close()
                     Toast.makeText(this, "Arquivo CSV salvo na pasta escolhida!", Toast.LENGTH_LONG).show()
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Erro ao salvar arquivo.", Toast.LENGTH_LONG).show()
-                }
+                } catch (e: Exception) {}
             }
         }
     }
@@ -115,17 +106,43 @@ class MainActivity : AppCompatActivity() {
         
         mapaTopografico = findViewById(R.id.mapaTopografico)
         
-        // Pede para o usuário escolher ou criar um projeto ao abrir o App
         mostrarDialogoDeProjeto()
 
         mapaTopografico.onMedicaoCalculada = { distancia ->
             Toast.makeText(this, "Distância Trena: ${String.format("%.3f", distancia)} m", Toast.LENGTH_LONG).show()
         }
 
-        // O Botão CAD agora pode servir para trocar de projeto no futuro
+        // --- SISTEMA DE LOCAÇÃO ---
+        btnLocacao.setOnClickListener {
+            mapaTopografico.modoLocacao = !mapaTopografico.modoLocacao
+            if (mapaTopografico.modoLocacao) {
+                btnLocacao.setBackgroundColor(Color.parseColor("#D84315")) // Laranja de Alerta
+                Toast.makeText(this, "MODO LOCAÇÃO: Arraste o projeto e toque na tela para cravar o X na quina!", Toast.LENGTH_LONG).show()
+                tvResultadoCorteAterro.text = "SELECIONE ALVO..."
+                tvResultadoCorteAterro.setTextColor(Color.parseColor("#AAAAAA"))
+            } else {
+                btnLocacao.setBackgroundColor(Color.parseColor("#333333")) // Cor Normal
+                mapaTopografico.alvoLocacao = null
+                tvResultadoCorteAterro.text = "---"
+            }
+            mapaTopografico.invalidate()
+        }
+
+        // Quando o topógrafo toca na tela e trava o alvo
+        mapaTopografico.onLocacaoLock = { ponto ->
+            if (ponto != null) {
+                Toast.makeText(this, "ALVO TRAVADO: ${ponto.nome}", Toast.LENGTH_SHORT).show()
+                // Faz o primeiro cálculo de distância imediato
+                val dist = hypot(ponto.lesteUtm - lesteUtmAtual, ponto.norteUtm - norteUtmAtual)
+                tvResultadoCorteAterro.text = "ALVO: ${ponto.nome}\nDIST: ${String.format("%.3f", dist)}m"
+                tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FFFF"))
+            } else {
+                tvResultadoCorteAterro.text = "SELECIONE ALVO..."
+                tvResultadoCorteAterro.setTextColor(Color.parseColor("#AAAAAA"))
+            }
+        }
+
         btnCad.setOnClickListener { mostrarDialogoDeProjeto() }
-        
-        btnLocacao.setOnClickListener { Toast.makeText(this, "Locação Ativada", Toast.LENGTH_SHORT).show() }
         btnCogo.setOnClickListener { Toast.makeText(this, "Calculadora COGO", Toast.LENGTH_SHORT).show() }
 
         btnConectar.setOnClickListener {
@@ -145,12 +162,9 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // Grava o ponto já carimbado com o nome do projeto atual
             val novoPonto = PontoTopografico(nomeDoPonto, norteUtmAtual, lesteUtmAtual, cotaChaoAtual, zonaUtmAtual, statusRtkAtual, projetoAtual)
-            
             listaDePontos.add(novoPonto)
             dbHelper.inserirPonto(novoPonto)
-            
             mapaTopografico.listaDePontos = listaDePontos
             mapaTopografico.invalidate()
 
@@ -173,18 +187,15 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "O projeto $projetoAtual está vazio!", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            
-            // Abre a tela nativa do Android para o topógrafo escolher a pasta e confirmar o nome do arquivo
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "text/csv"
-                putExtra(Intent.EXTRA_TITLE, "${projetoAtual}_AsBuilt.csv") // Nome sugerido do arquivo
+                putExtra(Intent.EXTRA_TITLE, "${projetoAtual}_AsBuilt.csv")
             }
             exportarLauncher.launch(intent)
         }
     }
 
-    // 3. CAIXA DE DIÁLOGO PARA CRIAR/SELECIONAR PROJETO
     private fun mostrarDialogoDeProjeto() {
         val input = EditText(this)
         input.hint = "Ex: Loteamento_A"
@@ -198,9 +209,8 @@ class MainActivity : AppCompatActivity() {
                 val nomeDigitado = input.text.toString().trim()
                 if (nomeDigitado.isNotEmpty()) {
                     projetoAtual = nomeDigitado
-                    btnCad.text = "🗺️ $projetoAtual" // Atualiza o botão lá em cima
+                    btnCad.text = "🗺️ $projetoAtual"
                     
-                    // Limpa a tela e busca só os pontos dessa obra no Banco de Dados
                     listaDePontos.clear()
                     listaDePontos.addAll(dbHelper.buscarPontosPorProjeto(projetoAtual))
                     mapaTopografico.listaDePontos = listaDePontos
@@ -248,45 +258,37 @@ class MainActivity : AppCompatActivity() {
                 tvNorteUTM.text = "N: ${String.format("%.3f", norteUtmAtual)}"
                 tvLesteUTM.text = "E: ${String.format("%.3f", lesteUtmAtual)}"
 
-                when (qualidade) {
-                    "4" -> {
-                        statusRtkAtual = "FIXO"
-                        tvStatusRTK.text = "STATUS: FIXO"
-                        tvStatusRTK.setTextColor(Color.parseColor("#00FF00"))
-                    }
-                    "5" -> {
-                        statusRtkAtual = "FLOAT"
-                        tvStatusRTK.text = "STATUS: FLOAT"
-                        tvStatusRTK.setTextColor(Color.parseColor("#FFC107"))
-                    }
-                    else -> {
-                        statusRtkAtual = "AUTÔNOMO"
-                        tvStatusRTK.text = "STATUS: AUTÔNOMO"
-                        tvStatusRTK.setTextColor(Color.parseColor("#FF5252"))
-                    }
-                }
-
-                val cotaNmea = cotaNmeaString.toDouble()
-                val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
-                val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: 0.0
-
-                cotaChaoAtual = cotaNmea - alturaBastao
-                tvCota.text = String.format("%.3f", cotaChaoAtual)
-
-                if (cotaProjeto > 0.0) { 
-                    val diferenca = cotaProjeto - cotaChaoAtual
-                    if (diferenca > 0) {
-                        tvResultadoCorteAterro.text = "ATERRAR: ${String.format("%.3f", diferenca)} m"
-                        tvResultadoCorteAterro.setTextColor(Color.parseColor("#00BFFF"))
-                    } else if (diferenca < 0) {
-                        tvResultadoCorteAterro.text = "CORTAR: ${String.format("%.3f", diferenca * -1)} m"
-                        tvResultadoCorteAterro.setTextColor(Color.parseColor("#FF5252"))
-                    } else {
-                        tvResultadoCorteAterro.text = "NO GREIDE"
-                        tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FF00"))
-                    }
+                // --- DISTÂNCIA EM TEMPO REAL ---
+                // Se a locação estiver ligada, calcula a distância e mostra na tela enquanto você anda!
+                if (mapaTopografico.modoLocacao && mapaTopografico.alvoLocacao != null) {
+                    val alvo = mapaTopografico.alvoLocacao!!
+                    val dist = hypot(alvo.lesteUtm - lesteUtmAtual, alvo.norteUtm - norteUtmAtual)
+                    tvResultadoCorteAterro.text = "ALVO: ${alvo.nome}\nDIST: ${String.format("%.3f", dist)}m"
+                    tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FFFF"))
                 } else {
-                    tvResultadoCorteAterro.text = "---"
+                    // Se não estiver locando, volta a calcular o Corte/Aterro do Greide
+                    val cotaNmea = cotaNmeaString.toDouble()
+                    val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
+                    val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: 0.0
+
+                    cotaChaoAtual = cotaNmea - alturaBastao
+                    tvCota.text = String.format("%.3f", cotaChaoAtual)
+
+                    if (cotaProjeto > 0.0) { 
+                        val diferenca = cotaProjeto - cotaChaoAtual
+                        if (diferenca > 0) {
+                            tvResultadoCorteAterro.text = "ATERRAR: ${String.format("%.3f", diferenca)} m"
+                            tvResultadoCorteAterro.setTextColor(Color.parseColor("#00BFFF"))
+                        } else if (diferenca < 0) {
+                            tvResultadoCorteAterro.text = "CORTAR: ${String.format("%.3f", diferenca * -1)} m"
+                            tvResultadoCorteAterro.setTextColor(Color.parseColor("#FF5252"))
+                        } else {
+                            tvResultadoCorteAterro.text = "NO GREIDE"
+                            tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FF00"))
+                        }
+                    } else {
+                        tvResultadoCorteAterro.text = "---"
+                    }
                 }
             }
         } catch (e: Exception) {}
