@@ -209,8 +209,8 @@ class MainActivity : AppCompatActivity() {
         input.hint = "Ex: Loteamento_A"
         input.setText(projetoAtual)
 
-        // Tema escuro explícito — sem isso o diálogo herdava o tema claro do Manifest
-        AlertDialog.Builder(this, R.style.Theme_AppCompat_Dialog_Alert)
+        // CORREÇÃO AQUI: Trocado para o tema nativo do Android
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Gerenciador de Projetos")
             .setMessage("Digite o nome da obra/projeto atual:")
             .setView(input)
