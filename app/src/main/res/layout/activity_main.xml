@@ -183,7 +183,6 @@
             android:inputType="numberDecimal"
             android:backgroundTint="#00BFFF" />
 
-        <!-- Painel "gigante" -->
         <TextView
             android:id="@+id/tvResultadoCorteAterro"
             android:layout_width="match_parent"
@@ -197,20 +196,20 @@
             android:fontFamily="monospace" />
     </LinearLayout>
 
-    <!-- EXPORTAR CSV (FUNDO DA TELA) -->
-    <Button
-        android:id="@+id/btnExportarCsv"
-        android:layout_width="match_parent"
+    <!-- BOTAO CENTRALIZAR (FLUTUANTE NO CANTO DIREITO) -->
+    <ImageButton
+        android:id="@+id/btnCentralizar"
+        android:layout_width="56dp"
         android:layout_height="56dp"
-        android:layout_alignParentBottom="true"
-        android:layout_marginStart="16dp"
+        android:layout_above="@id/panelBottomControls"
+        android:layout_alignParentEnd="true"
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="16dp"
-        android:text="EXPORTAR LEVANTAMENTO (.CSV)"
-        android:textSize="14sp"
-        android:textStyle="bold"
-        android:backgroundTint="#D84315"
-        android:textColor="#FFFFFF" />
+        android:background="@drawable/bg_botao_redondo"
+        android:src="@android:drawable/ic_menu_compass"
+        android:tint="#FFFFFF"
+        android:elevation="8dp"
+        android:contentDescription="Centralizar Mapa" />
 
     <!-- HUD: CONTROLES DE CAMPO (ACIMA DO BOTAO EXPORTAR) -->
     <RelativeLayout
@@ -280,5 +279,20 @@
             android:tint="#FFFFFF"
             android:contentDescription="Gravar ponto" />
     </RelativeLayout>
+
+    <!-- EXPORTAR CSV (FUNDO DA TELA) -->
+    <Button
+        android:id="@+id/btnExportarCsv"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_alignParentBottom="true"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        android:text="EXPORTAR LEVANTAMENTO (.CSV)"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:backgroundTint="#D84315"
+        android:textColor="#FFFFFF" />
 
 </RelativeLayout>
