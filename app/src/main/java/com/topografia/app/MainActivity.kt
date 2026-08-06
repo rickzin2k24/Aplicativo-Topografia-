@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnLocacao: Button
     private lateinit var btnCogo: Button
     private lateinit var btnConectar: Button
+    private lateinit var btnCentralizar: ImageButton
 
     private lateinit var tvStatusRTK: TextView
     private lateinit var tvLatitude: TextView
@@ -70,7 +71,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dbHelper: DatabaseHelper
     private var projetoAtual: String = "Projeto_Padrao"
 
-    // VARIÁVEIS DO GPS NATIVO DO CELULAR
     private lateinit var locationManager: LocationManager
     private val PERMISSION_REQUEST_GPS = 100
 
@@ -112,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         btnLocacao = findViewById(R.id.btnLocacao)
         btnCogo = findViewById(R.id.btnCogo)
         btnConectar = findViewById(R.id.btnConectar)
+        btnCentralizar = findViewById(R.id.btnCentralizar)
 
         tvStatusRTK = findViewById(R.id.tvStatusRTK)
         tvLatitude = findViewById(R.id.tvLatitude)
@@ -120,6 +121,7 @@ class MainActivity : AppCompatActivity() {
         tvLesteUTM = findViewById(R.id.tvLesteUTM)
         tvCota = findViewById(R.id.tvCota)
         tvResultadoCorteAterro = findViewById(R.id.tvResultadoCorteAterro)
+        
         etAlturaBastao = findViewById(R.id.etAlturaBastao)
         etCotaProjeto = findViewById(R.id.etCotaProjeto)
         etNomePonto = findViewById(R.id.etNomePonto)
@@ -129,10 +131,14 @@ class MainActivity : AppCompatActivity() {
         mapaTopografico = findViewById(R.id.mapaTopografico)
 
         mostrarDialogoDeProjeto()
-        checarPermissoesGps() // Aciona a verificação de GPS ao abrir o app
+        checarPermissoesGps() 
 
         mapaTopografico.onMedicaoCalculada = { distancia ->
             Toast.makeText(this, "Distância Trena: ${String.format(Locale.getDefault(), "%.3f", distancia)} m", Toast.LENGTH_LONG).show()
+        }
+
+        btnCentralizar.setOnClickListener {
+            mapaTopografico.centralizarNoUsuario()
         }
 
         btnLocacao.setOnClickListener {
@@ -165,8 +171,6 @@ class MainActivity : AppCompatActivity() {
         btnCad.setOnClickListener { mostrarDialogoDeProjeto() }
         btnCogo.setOnClickListener { Toast.makeText(this, "Calculadora COGO", Toast.LENGTH_SHORT).show() }
 
-        // O Botão RTK agora pode servir apenas para forçar uma conexão futura. 
-        // O GPS interno vai funcionar automaticamente.
         btnConectar.setOnClickListener {
             Toast.makeText(this, "Aguardando implementação Bluetooth SPP...", Toast.LENGTH_SHORT).show()
         }
@@ -217,8 +221,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- BLOCO DO GPS NATIVO DO CELULAR --- //
-
     private fun checarPermissoesGps() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), PERMISSION_REQUEST_GPS)
@@ -238,7 +240,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun iniciarLeituraGpsCelular() {
         try {
-            // Solicita a atualização do GPS a cada 1 segundo (1000ms) ou 1 metro de deslocamento
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
             Toast.makeText(this, "Buscando satélites do celular...", Toast.LENGTH_SHORT).show()
         } catch (ex: SecurityException) {
@@ -249,14 +250,10 @@ class MainActivity : AppCompatActivity() {
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             
-            // Pega as coordenadas exatas do Hardware do Celular
             latAtual = location.latitude
             lonAtual = location.longitude
-            
-            // A altitude do celular tem muito erro em relação ao RTK, mas serve para testes
             cotaChaoAtual = location.altitude 
 
-            // Converte tudo usando nossa matemática blindada
             val utmCoords = converterGrausParaUTM(latAtual, lonAtual)
             lesteUtmAtual = utmCoords[0]
             norteUtmAtual = utmCoords[1]
@@ -265,14 +262,13 @@ class MainActivity : AppCompatActivity() {
             val hemisferio = if (latAtual >= 0) "N" else "S"
             zonaUtmAtual = "${zonaUtmNumerica}${hemisferio}"
 
-            // Atualiza a Tela
             statusRtkAtual = "GPS INTERNO"
             tvStatusRTK.text = "GPS INTERNO (±${location.accuracy.toInt()}m)"
-            tvStatusRTK.setTextColor(Color.parseColor("#FFC107")) // Amarelo de Alerta (Não é RTK)
+            tvStatusRTK.setTextColor(Color.parseColor("#FFC107"))
 
             mapaTopografico.rtkNorte = norteUtmAtual
             mapaTopografico.rtkLeste = lesteUtmAtual
-            mapaTopografico.invalidate() // Força o mapa a se redesenhar
+            mapaTopografico.invalidate()
 
             tvLatitude.text = "Lat: ${String.format(Locale.getDefault(), "%.6f", latAtual)}°"
             tvLongitude.text = "Lon: ${String.format(Locale.getDefault(), "%.6f", lonAtual)}°"
@@ -280,7 +276,6 @@ class MainActivity : AppCompatActivity() {
             tvLesteUTM.text = "E: ${String.format(Locale.getDefault(), "%.3f", lesteUtmAtual)}"
             tvCota.text = String.format(Locale.getDefault(), "%.3f", cotaChaoAtual)
 
-            // Se o modo de Locação estiver travado em um ponto, calcula o Delta automaticamente!
             if (mapaTopografico.modoLocacao && mapaTopografico.alvoLocacao != null) {
                 val alvo = mapaTopografico.alvoLocacao!!
                 val dist = hypot(alvo.lesteUtm - lesteUtmAtual, alvo.norteUtm - norteUtmAtual)
@@ -291,13 +286,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Métodos obrigatórios da interface que não precisamos usar agora
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         override fun onProviderEnabled(provider: String) {}
         override fun onProviderDisabled(provider: String) {}
     }
-
-    // --- FIM DO BLOCO GPS --- //
 
     private fun mostrarDialogoDeProjeto() {
         val input = EditText(this)
