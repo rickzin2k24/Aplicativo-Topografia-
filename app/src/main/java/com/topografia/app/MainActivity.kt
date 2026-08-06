@@ -1,8 +1,14 @@
 package com.topografia.app
 
+import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
@@ -13,6 +19,8 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import java.io.OutputStreamWriter
 import java.util.Locale
 import kotlin.math.*
@@ -62,13 +70,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dbHelper: DatabaseHelper
     private var projetoAtual: String = "Projeto_Padrao"
 
+    // VARIÁVEIS DO GPS NATIVO DO CELULAR
+    private lateinit var locationManager: LocationManager
+    private val PERMISSION_REQUEST_GPS = 100
+
     private val exportarLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.data?.let { uri ->
                 try {
                     val outputStream = contentResolver.openOutputStream(uri)
                     val escritor = OutputStreamWriter(outputStream)
-                    // Cabeçalho corrigido: a coluna era rotulada "Codigo" mas gravava a zona UTM
                     escritor.append("Ponto,Norte(m),Leste(m),Elevacao(m),Zona,Projeto\n")
                     for (ponto in listaDePontos) {
                         escritor.append(
@@ -82,9 +93,8 @@ class MainActivity : AppCompatActivity() {
                     }
                     escritor.flush()
                     escritor.close()
-                    Toast.makeText(this, "Arquivo CSV salvo na pasta escolhida!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Arquivo CSV salvo com sucesso!", Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
-                    // Antes falhava calado — agora avisa, porque perder o CSV do dia é grave
                     Toast.makeText(this, "Erro ao salvar CSV: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
@@ -96,6 +106,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         dbHelper = DatabaseHelper(this)
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
         btnCad = findViewById(R.id.btnCad)
         btnLocacao = findViewById(R.id.btnLocacao)
@@ -118,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         mapaTopografico = findViewById(R.id.mapaTopografico)
 
         mostrarDialogoDeProjeto()
+        checarPermissoesGps() // Aciona a verificação de GPS ao abrir o app
 
         mapaTopografico.onMedicaoCalculada = { distancia ->
             Toast.makeText(this, "Distância Trena: ${String.format(Locale.getDefault(), "%.3f", distancia)} m", Toast.LENGTH_LONG).show()
@@ -127,7 +139,7 @@ class MainActivity : AppCompatActivity() {
             mapaTopografico.modoLocacao = !mapaTopografico.modoLocacao
             if (mapaTopografico.modoLocacao) {
                 btnLocacao.setBackgroundColor(Color.parseColor("#D84315"))
-                Toast.makeText(this, "MODO LOCAÇÃO: Arraste o projeto e toque na tela para cravar o X na quina!", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "MODO LOCAÇÃO ATIVADO", Toast.LENGTH_SHORT).show()
                 tvResultadoCorteAterro.text = "SELECIONE ALVO..."
                 tvResultadoCorteAterro.setTextColor(Color.parseColor("#AAAAAA"))
             } else {
@@ -153,9 +165,10 @@ class MainActivity : AppCompatActivity() {
         btnCad.setOnClickListener { mostrarDialogoDeProjeto() }
         btnCogo.setOnClickListener { Toast.makeText(this, "Calculadora COGO", Toast.LENGTH_SHORT).show() }
 
+        // O Botão RTK agora pode servir apenas para forçar uma conexão futura. 
+        // O GPS interno vai funcionar automaticamente.
         btnConectar.setOnClickListener {
-            val nmeaTeste = "\$GPGGA,123519,0854.1234,S,03622.5678,W,4,08,0.9,764.123,M,46.9,M,,*47"
-            processarNMEA(nmeaTeste)
+            Toast.makeText(this, "Aguardando implementação Bluetooth SPP...", Toast.LENGTH_SHORT).show()
         }
 
         btnGravarPonto.setOnClickListener {
@@ -166,7 +179,7 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             if (norteUtmAtual == 0.0) {
-                Toast.makeText(this, "Erro: Sem coordenada RTK!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Erro: Sem coordenada de GPS!", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -176,7 +189,7 @@ class MainActivity : AppCompatActivity() {
             mapaTopografico.listaDePontos = listaDePontos
             mapaTopografico.invalidate()
 
-            Toast.makeText(this, "Ponto salvo no projeto: $projetoAtual", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Ponto salvo: $nomeDoPonto", Toast.LENGTH_SHORT).show()
 
             val match = Regex("(\\d+)$").find(nomeDoPonto)
             if (match != null) {
@@ -192,7 +205,7 @@ class MainActivity : AppCompatActivity() {
 
         btnExportarCsv.setOnClickListener {
             if (listaDePontos.isEmpty()) {
-                Toast.makeText(this, "O projeto $projetoAtual está vazio!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Projeto Vazio!", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
@@ -204,12 +217,93 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // --- BLOCO DO GPS NATIVO DO CELULAR --- //
+
+    private fun checarPermissoesGps() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), PERMISSION_REQUEST_GPS)
+        } else {
+            iniciarLeituraGpsCelular()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_GPS && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            iniciarLeituraGpsCelular()
+        } else {
+            Toast.makeText(this, "Permissão de GPS negada. O mapa não irá atualizar.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun iniciarLeituraGpsCelular() {
+        try {
+            // Solicita a atualização do GPS a cada 1 segundo (1000ms) ou 1 metro de deslocamento
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
+            Toast.makeText(this, "Buscando satélites do celular...", Toast.LENGTH_SHORT).show()
+        } catch (ex: SecurityException) {
+            Log.e("MainActivity", "Erro de segurança ao acessar GPS", ex)
+        }
+    }
+
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            
+            // Pega as coordenadas exatas do Hardware do Celular
+            latAtual = location.latitude
+            lonAtual = location.longitude
+            
+            // A altitude do celular tem muito erro em relação ao RTK, mas serve para testes
+            cotaChaoAtual = location.altitude 
+
+            // Converte tudo usando nossa matemática blindada
+            val utmCoords = converterGrausParaUTM(latAtual, lonAtual)
+            lesteUtmAtual = utmCoords[0]
+            norteUtmAtual = utmCoords[1]
+
+            val zonaUtmNumerica = ((lonAtual + 180) / 6).toInt() + 1
+            val hemisferio = if (latAtual >= 0) "N" else "S"
+            zonaUtmAtual = "${zonaUtmNumerica}${hemisferio}"
+
+            // Atualiza a Tela
+            statusRtkAtual = "GPS INTERNO"
+            tvStatusRTK.text = "GPS INTERNO (±${location.accuracy.toInt()}m)"
+            tvStatusRTK.setTextColor(Color.parseColor("#FFC107")) // Amarelo de Alerta (Não é RTK)
+
+            mapaTopografico.rtkNorte = norteUtmAtual
+            mapaTopografico.rtkLeste = lesteUtmAtual
+            mapaTopografico.invalidate() // Força o mapa a se redesenhar
+
+            tvLatitude.text = "Lat: ${String.format(Locale.getDefault(), "%.6f", latAtual)}°"
+            tvLongitude.text = "Lon: ${String.format(Locale.getDefault(), "%.6f", lonAtual)}°"
+            tvNorteUTM.text = "N: ${String.format(Locale.getDefault(), "%.3f", norteUtmAtual)}"
+            tvLesteUTM.text = "E: ${String.format(Locale.getDefault(), "%.3f", lesteUtmAtual)}"
+            tvCota.text = String.format(Locale.getDefault(), "%.3f", cotaChaoAtual)
+
+            // Se o modo de Locação estiver travado em um ponto, calcula o Delta automaticamente!
+            if (mapaTopografico.modoLocacao && mapaTopografico.alvoLocacao != null) {
+                val alvo = mapaTopografico.alvoLocacao!!
+                val dist = hypot(alvo.lesteUtm - lesteUtmAtual, alvo.norteUtm - norteUtmAtual)
+                tvResultadoCorteAterro.text = "ALVO: ${alvo.nome}\nDIST: ${String.format(Locale.getDefault(), "%.3f", dist)}m"
+                tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FFFF"))
+            } else {
+                tvResultadoCorteAterro.text = "---"
+            }
+        }
+
+        // Métodos obrigatórios da interface que não precisamos usar agora
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+    }
+
+    // --- FIM DO BLOCO GPS --- //
+
     private fun mostrarDialogoDeProjeto() {
         val input = EditText(this)
         input.hint = "Ex: Loteamento_A"
         input.setText(projetoAtual)
 
-        // CORREÇÃO AQUI: Trocado para o tema nativo do Android
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Gerenciador de Projetos")
             .setMessage("Digite o nome da obra/projeto atual:")
@@ -218,121 +312,18 @@ class MainActivity : AppCompatActivity() {
                 val nomeDigitado = input.text.toString().trim()
                 if (nomeDigitado.isNotEmpty()) {
                     projetoAtual = nomeDigitado
-                    btnCad.text = projetoAtual // sem emoji
+                    btnCad.text = projetoAtual 
 
                     listaDePontos.clear()
                     listaDePontos.addAll(dbHelper.buscarPontosPorProjeto(projetoAtual))
                     mapaTopografico.listaDePontos = listaDePontos
                     mapaTopografico.invalidate()
 
-                    Toast.makeText(this, "Projeto $projetoAtual carregado!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Projeto carregado!", Toast.LENGTH_SHORT).show()
                 }
             }
             .setCancelable(false)
             .show()
-    }
-
-    private fun processarNMEA(linhaNmea: String) {
-        if (!linhaNmea.startsWith("$") || !linhaNmea.contains("*")) return
-
-        try {
-            val partes = linhaNmea.split(",")
-            if (partes[0] == "\$GPGGA" && partes.size > 10) {
-                val latNmea = partes[2]
-                val latDir = partes[3]
-                val lonNmea = partes[4]
-                val lonDir = partes[5]
-                val cotaNmeaString = partes[9]
-                val qualidade = partes[6]
-
-                if (latNmea.isEmpty() || lonNmea.isEmpty() || cotaNmeaString.isEmpty()) return
-
-                latAtual = converterNmeaParaGrausDecimais(latNmea, latDir)
-                lonAtual = converterNmeaParaGrausDecimais(lonNmea, lonDir)
-
-                val utmCoords = converterGrausParaUTM(latAtual, lonAtual)
-                lesteUtmAtual = utmCoords[0]
-                norteUtmAtual = utmCoords[1]
-
-                val zonaUtmNumerica = ((lonAtual + 180) / 6).toInt() + 1
-                val hemisferio = if (latAtual >= 0) "N" else "S"
-                zonaUtmAtual = "${zonaUtmNumerica}${hemisferio}"
-
-                atualizarStatusRtk(qualidade)
-
-                mapaTopografico.rtkNorte = norteUtmAtual
-                mapaTopografico.rtkLeste = lesteUtmAtual
-                mapaTopografico.invalidate()
-
-                tvLatitude.text = "Lat: ${String.format(Locale.getDefault(), "%.6f", latAtual)}°"
-                tvLongitude.text = "Lon: ${String.format(Locale.getDefault(), "%.6f", lonAtual)}°"
-                tvNorteUTM.text = "N: ${String.format(Locale.getDefault(), "%.3f", norteUtmAtual)}"
-                tvLesteUTM.text = "E: ${String.format(Locale.getDefault(), "%.3f", lesteUtmAtual)}"
-
-                if (mapaTopografico.modoLocacao && mapaTopografico.alvoLocacao != null) {
-                    val alvo = mapaTopografico.alvoLocacao!!
-                    val dist = hypot(alvo.lesteUtm - lesteUtmAtual, alvo.norteUtm - norteUtmAtual)
-                    tvResultadoCorteAterro.text = "ALVO: ${alvo.nome}\nDIST: ${String.format(Locale.getDefault(), "%.3f", dist)}m"
-                    tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FFFF"))
-                } else {
-                    val cotaNmea = cotaNmeaString.toDouble()
-                    val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
-                    val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: 0.0
-
-                    cotaChaoAtual = cotaNmea - alturaBastao
-                    tvCota.text = String.format(Locale.getDefault(), "%.3f", cotaChaoAtual)
-
-                    if (cotaProjeto > 0.0) {
-                        val diferenca = cotaProjeto - cotaChaoAtual
-                        if (diferenca > 0) {
-                            tvResultadoCorteAterro.text = "ATERRAR: ${String.format(Locale.getDefault(), "%.3f", diferenca)} m"
-                            tvResultadoCorteAterro.setTextColor(Color.parseColor("#00BFFF"))
-                        } else if (diferenca < 0) {
-                            tvResultadoCorteAterro.text = "CORTAR: ${String.format(Locale.getDefault(), "%.3f", diferenca * -1)} m"
-                            tvResultadoCorteAterro.setTextColor(Color.parseColor("#FF5252"))
-                        } else {
-                            tvResultadoCorteAterro.text = "NO GREIDE"
-                            tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FF00"))
-                        }
-                    } else {
-                        tvResultadoCorteAterro.text = "---"
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            // Antes era um catch mudo — agora fica no Logcat pra dar pra debugar em campo depois
-            Log.e("MainActivity", "Erro ao processar sentença NMEA: ${e.message}", e)
-        }
-    }
-
-    // NOVO: faltava usar a qualidade do fix. Antes o status ficava travado em "Desconectado" pra sempre.
-    private fun atualizarStatusRtk(qualidade: String) {
-        val (texto, cor) = when (qualidade) {
-            "4" -> "RTK FIXO" to "#00E676"           // Verde neon
-            "5" -> "RTK FLOAT" to "#FFC107"          // Âmbar
-            "1", "2" -> "GPS AUTÔNOMO" to "#FF5252"  // Baixa precisão pra topografia
-            "0" -> "SEM FIX" to "#D32F2F"
-            else -> "QUALIDADE $qualidade" to "#AAAAAA"
-        }
-        statusRtkAtual = texto
-        tvStatusRTK.text = texto
-        tvStatusRTK.setTextColor(Color.parseColor(cor))
-    }
-
-    private fun converterNmeaParaGrausDecimais(nmeaValor: String, direcao: String): Double {
-        if (nmeaValor.isEmpty()) return 0.0
-        val pontoIndex = nmeaValor.indexOf('.')
-        if (pontoIndex == -1 || pontoIndex < 2) return 0.0
-
-        val grausString = nmeaValor.substring(0, pontoIndex - 2)
-        val minutosString = nmeaValor.substring(pontoIndex - 2)
-
-        val graus = grausString.toDoubleOrNull() ?: 0.0
-        val minutos = minutosString.toDoubleOrNull() ?: 0.0
-        var grausDecimais = graus + (minutos / 60.0)
-
-        if (direcao == "S" || direcao == "W") grausDecimais *= -1
-        return grausDecimais
     }
 
     private fun converterGrausParaUTM(lat: Double, lon: Double): DoubleArray {
