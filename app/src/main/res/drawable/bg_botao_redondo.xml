@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
-    <!-- Cor de fundo do botão (Azul Topografia) -->
-    <solid android:color="#1976D2"/>
-    <!-- Uma borda branca fina para dar destaque -->
+    <!-- Verde neon (confirmar / gravar ponto) -->
+    <solid android:color="#00E676"/>
     <stroke android:width="2dp" android:color="#FFFFFF"/>
 </shape>
