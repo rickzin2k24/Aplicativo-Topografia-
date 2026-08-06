@@ -4,12 +4,13 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import java.util.Locale
 import kotlin.math.hypot
-import kotlin.math.sqrt
 
 class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
@@ -17,24 +18,31 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private val paintPonto = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL }
     private val paintTexto = Paint().apply { color = Color.WHITE; textSize = 35f }
     private val paintLinhaMedicao = Paint().apply { color = Color.parseColor("#FFC107"); strokeWidth = 5f }
-    private val paintRTK = Paint().apply { color = Color.parseColor("#00FF00"); style = Paint.Style.FILL }
-    private val paintSelecao = Paint().apply { color = Color.parseColor("#00BFFF"); style = Paint.Style.FILL }
     
-    // NOVOS PINCÉIS DE LOCAÇÃO
+    // Pincel do seu Triângulo (RTK)
+    private val paintRTK = Paint().apply { color = Color.parseColor("#00E676"); style = Paint.Style.FILL }
+    
+    private val paintSelecao = Paint().apply { color = Color.parseColor("#00BFFF"); style = Paint.Style.FILL }
     private val paintCruz = Paint().apply { color = Color.RED; strokeWidth = 4f; style = Paint.Style.STROKE }
     private val paintIma = Paint().apply { color = Color.parseColor("#FF9800"); strokeWidth = 4f; style = Paint.Style.STROKE }
-    private val paintLinhaLocacao = Paint().apply { color = Color.parseColor("#00FFFF"); strokeWidth = 6f; style = Paint.Style.STROKE } // Azul piscina
+    private val paintLinhaLocacao = Paint().apply { color = Color.parseColor("#00FFFF"); strokeWidth = 6f; style = Paint.Style.STROKE }
+    
+    // Pincel para o texto de Escala/Altitude da câmera
+    private val paintEscala = Paint().apply { 
+        color = Color.parseColor("#00FFFF")
+        textSize = 38f
+        isFakeBoldText = true
+        setShadowLayer(5f, 2f, 2f, Color.BLACK) // Sombra forte para ler no sol
+    }
 
     var listaDePontos = listOf<PontoTopografico>()
     var rtkNorte = 0.0
     var rtkLeste = 0.0
 
-    // Variáveis da Trena (COGO)
     private var pontoSelecionado1: PontoTopografico? = null
     private var pontoSelecionado2: PontoTopografico? = null
     var onMedicaoCalculada: ((Double) -> Unit)? = null
 
-    // VARIÁVEIS DO MÓDULO LOCAÇÃO
     var modoLocacao = false
     var alvoLocacao: PontoTopografico? = null
     private var pontoFocado: PontoTopografico? = null
@@ -42,12 +50,11 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
     private val escala = 15f 
 
-    // Motor de Câmera
     private var mPosX = 0f
     private var mPosY = 0f
     private var mLastTouchX = 0f
     private var mLastTouchY = 0f
-    private var mTouchDownX = 0f // Para saber se foi clique ou arrasto
+    private var mTouchDownX = 0f 
     private var mTouchDownY = 0f
     private var mScaleFactor = 1.0f
     private val scaleDetector: ScaleGestureDetector
@@ -63,42 +70,52 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         })
     }
 
+    // Função chamada pelo botão para jogar a tela de volta em você
+    fun centralizarNoUsuario() {
+        mPosX = 0f
+        mPosY = 0f
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawColor(Color.parseColor("#191919"))
+        canvas.drawColor(Color.parseColor("#121212")) // Fundo escuro padrão
 
-        canvas.save()
+        canvas.save() // Salva o estado para a câmera 2D
         canvas.translate(mPosX, mPosY)
         canvas.scale(mScaleFactor, mScaleFactor)
 
         val centroX = width / 2f
         val centroY = height / 2f
 
-        // Desenha os pontos do projeto
         for (ponto in listaDePontos) {
             val telaX = centroX + ((ponto.lesteUtm - rtkLeste) * escala).toFloat()
             val telaY = centroY - ((ponto.norteUtm - rtkNorte) * escala).toFloat()
 
-            canvas.drawCircle(telaX, telaY, 15f, paintPonto)
-            canvas.drawText(ponto.nome, telaX + 25f, telaY + 10f, paintTexto)
+            // Os pontos normais ficam do mesmo tamanho na tela dividindo o raio pela escala
+            val raioPonto = 15f / mScaleFactor
+            canvas.drawCircle(telaX, telaY, raioPonto, paintPonto)
+            
+            // O texto dos pontos também não cresce
+            val textSizeOriginal = 35f
+            paintTexto.textSize = textSizeOriginal / mScaleFactor
+            canvas.drawText(ponto.nome, telaX + (25f / mScaleFactor), telaY + (10f / mScaleFactor), paintTexto)
 
             if (ponto == pontoSelecionado1 || ponto == pontoSelecionado2) {
-                canvas.drawCircle(telaX, telaY, 20f, paintSelecao)
+                canvas.drawCircle(telaX, telaY, 20f / mScaleFactor, paintSelecao)
             }
         }
 
-        // Desenha a linha da Trena Virtual
         if (pontoSelecionado1 != null && pontoSelecionado2 != null) {
             val x1 = centroX + ((pontoSelecionado1!!.lesteUtm - rtkLeste) * escala).toFloat()
             val y1 = centroY - ((pontoSelecionado1!!.norteUtm - rtkNorte) * escala).toFloat()
             val x2 = centroX + ((pontoSelecionado2!!.lesteUtm - rtkLeste) * escala).toFloat()
             val y2 = centroY - ((pontoSelecionado2!!.norteUtm - rtkNorte) * escala).toFloat()
+            
+            paintLinhaMedicao.strokeWidth = 5f / mScaleFactor
             canvas.drawLine(x1, y1, x2, y2, paintLinhaMedicao)
         }
 
-        // --- SISTEMA DE LOCAÇÃO (O ÍMÃ E A LINHA) ---
-        
-        // Descobre que parte do "chão" está exatamente no centro do vidro do celular
         val invX = (centroX - mPosX) / mScaleFactor
         val invY = (centroY - mPosY) / mScaleFactor
 
@@ -106,47 +123,67 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             var min_dist = Float.MAX_VALUE
             var pontoIma: PontoTopografico? = null
             
-            // Varre o projeto para ver se alguma quina está perto do centro da tela
             for (ponto in listaDePontos) {
                 val telaX = centroX + ((ponto.lesteUtm - rtkLeste) * escala).toFloat()
                 val telaY = centroY - ((ponto.norteUtm - rtkNorte) * escala).toFloat()
                 
                 val dist = hypot(telaX - invX, telaY - invY)
-                if (dist < (80f / mScaleFactor) && dist < min_dist) { // Alcance do Ímã
+                if (dist < (80f / mScaleFactor) && dist < min_dist) { 
                     min_dist = dist
                     pontoIma = ponto
                 }
             }
             pontoFocado = pontoIma
             
-            // O Xzinho magnético
             val cX = if (pontoIma != null) centroX + ((pontoIma.lesteUtm - rtkLeste) * escala).toFloat() else invX
             val cY = if (pontoIma != null) centroY - ((pontoIma.norteUtm - rtkNorte) * escala).toFloat() else invY
             
-            val size = 20f / mScaleFactor
-            // Desenha o X
-            canvas.drawLine(cX - size, cY - size, cX + size, cY + size, paintCruz)
-            canvas.drawLine(cX - size, cY + size, cX + size, cY - size, paintCruz)
+            val sizeX = 20f / mScaleFactor
+            paintCruz.strokeWidth = 4f / mScaleFactor
+            canvas.drawLine(cX - sizeX, cY - sizeX, cX + sizeX, cY + sizeX, paintCruz)
+            canvas.drawLine(cX - sizeX, cY + sizeX, cX + sizeX, cY - sizeX, paintCruz)
             
-            // Se o ímã puxou a quina, desenha o alerta visual laranja
             if (pontoIma != null) {
+                paintIma.strokeWidth = 4f / mScaleFactor
                 canvas.drawCircle(cX, cY, 35f / mScaleFactor, paintIma)
             }
         }
 
-        // Se o alvo estiver travado, desenha a linha guia azul ligando o RTK (Centro) ao Ponto
         if (alvoLocacao != null) {
             val alvoX = centroX + ((alvoLocacao!!.lesteUtm - rtkLeste) * escala).toFloat()
             val alvoY = centroY - ((alvoLocacao!!.norteUtm - rtkNorte) * escala).toFloat()
+            paintLinhaLocacao.strokeWidth = 6f / mScaleFactor
             canvas.drawLine(centroX, centroY, alvoX, alvoY, paintLinhaLocacao)
             
-            // Um marcador extra para não perder o alvo de vista
+            paintIma.strokeWidth = 4f / mScaleFactor
             canvas.drawCircle(alvoX, alvoY, 25f / mScaleFactor, paintIma)
         }
 
-        // Desenha Você (RTK) por cima de tudo
-        canvas.drawCircle(centroX, centroY, 20f, paintRTK)
-        canvas.restore()
+        // DESENHANDO VOCÊ (TRIÂNGULO RTK CONSTANTE)
+        // A divisão por mScaleFactor garante que ele nunca vai engolir a tela no zoom
+        val tamanhoRtk = 45f / mScaleFactor 
+        val pathRtk = Path()
+        
+        // A ponta aguda fica exata no centroX, centroY
+        pathRtk.moveTo(centroX, centroY) 
+        // Perna esquerda traseira
+        pathRtk.lineTo(centroX - (tamanhoRtk * 0.6f), centroY + tamanhoRtk) 
+        // Perna direita traseira
+        pathRtk.lineTo(centroX + (tamanhoRtk * 0.6f), centroY + tamanhoRtk) 
+        pathRtk.close()
+        
+        canvas.drawPath(pathRtk, paintRTK)
+
+        // Restaura a matriz. O que desenharmos a partir daqui fica "colado" no vidro do celular
+        canvas.restore() 
+
+        // HUD DA ESCALA (VISÃO DA CÂMERA)
+        // Calcula quantos metros a largura da tela inteira está enxergando
+        val larguraEmMetros = width / (escala * mScaleFactor)
+        val textoEscala = "Visão: ${String.format(Locale.getDefault(), "%.1f", larguraEmMetros)} m"
+        
+        // Desenha a escala flutuando no lado esquerdo, abaixo do painel de telemetria
+        canvas.drawText(textoEscala, 40f, 400f, paintEscala)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -171,16 +208,12 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
                 mLastTouchY = event.y
             }
             MotionEvent.ACTION_UP -> {
-                // Se mexeu muito pouco o dedo, o aplicativo considera que foi um "Toque" (Clique)
                 val distTap = hypot(event.x - mTouchDownX, event.y - mTouchDownY)
                 if (distTap < 15f) { 
-                    
                     if (modoLocacao) {
-                        // Se estiver no modo locação, o clique trava o alvo magnético!
                         alvoLocacao = pontoFocado
                         onLocacaoLock?.invoke(alvoLocacao)
                     } else {
-                        // Modo Trena normal
                         val toqueX = (event.x - mPosX) / mScaleFactor
                         val toqueY = (event.y - mPosY) / mScaleFactor
                         val centroX = width / 2f
