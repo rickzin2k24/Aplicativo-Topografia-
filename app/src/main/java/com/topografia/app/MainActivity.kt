@@ -1,5 +1,6 @@
 package com.topografia.app
 
+// Commit para Atualizar NMEA Global, Auto-Incremento e Layout
 import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
@@ -89,7 +90,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var nomeObraAtual: String = "Padrao"
     private var projetoAtual: String = "[CAMPO] Padrao" 
 
-    // VARIÁVEIS DE GPS E SENSORES
     private lateinit var locationManager: LocationManager
     private val PERMISSION_REQUEST_GPS = 100
 
@@ -103,11 +103,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val rotationMatrix = FloatArray(9)
     private val orientation = FloatArray(3)
 
-    // VARIÁVEIS DO BLUETOOTH SPP
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var bluetoothSocket: BluetoothSocket? = null
     private var isBluetoothConnected = false
-    private val UUID_SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") // Padrão Serial Universal
+    private val UUID_SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") 
     private val PERMISSION_REQUEST_BLUETOOTH = 101
 
     private val exportarLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -182,6 +181,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnExportarCsv = findViewById(R.id.btnExportarCsv)
 
         mapaTopografico = findViewById(R.id.mapaTopografico)
+        
+        // PADRÃO DE NOME AUTO-INCREMENTÁVEL
+        etNomePonto.setText("1")
 
         mostrarDialogoDeProjeto()
         checarPermissoesGps() 
@@ -192,19 +194,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnCentralizar.setOnClickListener {
             mapaTopografico.centralizarNoUsuario()
-            Toast.makeText(this, "Foco: Localização Atual", Toast.LENGTH_SHORT).show()
         }
         
         btnZoomProjeto.setOnClickListener {
             mapaTopografico.zoomParaProjeto()
-            Toast.makeText(this, "Foco: Malha do Projeto", Toast.LENGTH_SHORT).show()
         }
 
         btnImportar.setOnClickListener {
             importarLauncher.launch("*/*")
         }
 
-        // --- BOTÃO RTK (GERENCIADOR BLUETOOTH) ---
         btnConectar.setOnClickListener {
             if (isBluetoothConnected) {
                 desconectarBluetooth()
@@ -260,14 +259,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             
             Toast.makeText(this, "Ponto salvo na área $areaAtual", Toast.LENGTH_SHORT).show()
 
-            val match = Regex("(\\d+)$").find(nomeDoPonto)
-            if (match != null) {
-                val numStr = match.value
-                val nextNum = numStr.toInt() + 1
-                val newName = nomeDoPonto.dropLast(numStr.length) + String.format(Locale.US, "%0${numStr.length}d", nextNum)
-                etNomePonto.setText(newName)
+            // AUTO-INCREMENTO (Se for 1, vira 2. Se for P1, vira P2).
+            val numAtual = nomeDoPonto.toIntOrNull()
+            if (numAtual != null) {
+                etNomePonto.setText((numAtual + 1).toString())
             } else {
-                etNomePonto.setText("${nomeDoPonto}1")
+                val match = Regex("(\\d+)$").find(nomeDoPonto)
+                if (match != null) {
+                    val numStr = match.value
+                    val nextNum = numStr.toInt() + 1
+                    val newName = nomeDoPonto.dropLast(numStr.length) + String.format(Locale.US, "%0${numStr.length}d", nextNum)
+                    etNomePonto.setText(newName)
+                } else {
+                    etNomePonto.setText("${nomeDoPonto}1")
+                }
             }
             etNomePonto.setSelection(etNomePonto.text.length)
         }
@@ -285,10 +290,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             exportarLauncher.launch(intent)
         }
     }
-
-    // =========================================================================
-    // MOTORES BLUETOOTH E NMEA (COBRANDO PRECISÃO MILIMÉTRICA DO RTK)
-    // =========================================================================
 
     private fun mostrarDialogoBluetooth() {
         if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
@@ -336,7 +337,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 isBluetoothConnected = true
                 
                 runOnUiThread {
-                    btnConectar.setBackgroundColor(Color.parseColor("#00E676")) // Verde
+                    btnConectar.setBackgroundColor(Color.parseColor("#00E676")) 
                     btnConectar.text = "RTK ON"
                     Toast.makeText(this, "RTK CONECTADO!", Toast.LENGTH_SHORT).show()
                 }
@@ -388,13 +389,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun processarNMEA(linhaNmea: String) {
-        // Ignora sentenças incompletas
         if (!linhaNmea.contains("*")) return
 
         try {
             val partes = linhaNmea.split(",")
-            // $GPGGA contém todos os dados cruciais de topografia (Lat, Lon, Alt, Qualidade)
-            if ((partes[0] == "\$GPGGA" || partes[0] == "\$GNGGA") && partes.size > 10) {
+            // NOVO FILTRO GLOBAL: Agora aceita $GPGGA, $GNGGA, $GLGGA (Qualquer Antena Base/Rover)
+            val cabecalho = partes[0]
+            if (cabecalho.endsWith("GGA") && partes.size > 10) {
                 val latNmea = partes[2]
                 val latDir = partes[3]
                 val lonNmea = partes[4]
@@ -415,7 +416,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val hemisferio = if (latAtual >= 0) "N" else "S"
                 zonaUtmAtual = "${zonaUtmNumerica}${hemisferio}"
 
-                // A altitude base do equipamento
                 cotaChaoAtual = cotaNmeaString.toDouble()
 
                 atualizarStatusRtk(qualidade)
@@ -428,9 +428,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun atualizarStatusRtk(qualidade: String) {
         val (texto, cor) = when (qualidade) {
-            "4" -> "RTK FIXO (Milimétrico)" to "#00E676"           // Verde neon (Melhor cenário)
-            "5" -> "RTK FLOAT (Centimétrico)" to "#FFC107"         // Âmbar
-            "1", "2" -> "GPS AUTÔNOMO (Metros)" to "#FF5252"       // Vermelho
+            "4" -> "RTK FIXO (Milimétrico)" to "#00E676"           
+            "5" -> "RTK FLOAT (Centimétrico)" to "#FFC107"         
+            "1", "2" -> "GPS AUTÔNOMO (Metros)" to "#FF5252"       
             "0" -> "SEM SINAL" to "#D32F2F"
             else -> "QUALIDADE $qualidade" to "#AAAAAA"
         }
@@ -454,8 +454,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (direcao == "S" || direcao == "W") grausDecimais *= -1
         return grausDecimais
     }
-
-    // =========================================================================
 
     override fun onResume() {
         super.onResume()
@@ -491,7 +489,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-    // --- GPS INTERNO (BACKUP QUANDO O RTK NÃO ESTIVER CONECTADO) ---
     private fun checarPermissoesGps() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), PERMISSION_REQUEST_GPS)
@@ -517,7 +514,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
-            // REGRA DE OURO: Se o RTK Bluetooth estiver conectado, ignora totalmente o GPS ruim do celular.
             if (isBluetoothConnected) return 
 
             latAtual = location.latitude
@@ -543,7 +539,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         override fun onProviderDisabled(provider: String) {}
     }
 
-    // Esta função agrupa a atualização de tela para evitar repetição de código (usada pelo RTK e pelo Celular)
     private fun atualizarInterfaceGlobal() {
         mapaTopografico.rtkNorte = norteUtmAtual
         mapaTopografico.rtkLeste = lesteUtmAtual
