@@ -1,6 +1,6 @@
 package com.topografia.app
 
-// Commit para Atualizar NMEA Global, Auto-Incremento e Layout
+// Commit para MODO ESPIÃO BLUETOOTH E DEBUG NMEA
 import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
@@ -181,8 +181,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnExportarCsv = findViewById(R.id.btnExportarCsv)
 
         mapaTopografico = findViewById(R.id.mapaTopografico)
-        
-        // PADRÃO DE NOME AUTO-INCREMENTÁVEL
         etNomePonto.setText("1")
 
         mostrarDialogoDeProjeto()
@@ -259,7 +257,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             
             Toast.makeText(this, "Ponto salvo na área $areaAtual", Toast.LENGTH_SHORT).show()
 
-            // AUTO-INCREMENTO (Se for 1, vira 2. Se for P1, vira P2).
             val numAtual = nomeDoPonto.toIntOrNull()
             if (numAtual != null) {
                 etNomePonto.setText((numAtual + 1).toString())
@@ -373,9 +370,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         while (isBluetoothConnected) {
             try {
                 val linhaNmea = bufferedReader?.readLine()
-                if (linhaNmea != null && linhaNmea.startsWith("$")) {
+                if (linhaNmea != null) {
                     runOnUiThread {
-                        processarNMEA(linhaNmea)
+                        // ==== MODO ESPIÃO ====
+                        // Tudo o que vier da antena vai ser impresso em laranja na tela para nós vermos!
+                        if (linhaNmea.startsWith("$")) {
+                            tvResultadoCorteAterro.text = "RAW: $linhaNmea"
+                            tvResultadoCorteAterro.setTextColor(Color.parseColor("#FFA500"))
+                            processarNMEA(linhaNmea)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -393,9 +396,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         try {
             val partes = linhaNmea.split(",")
-            // NOVO FILTRO GLOBAL: Agora aceita $GPGGA, $GNGGA, $GLGGA (Qualquer Antena Base/Rover)
             val cabecalho = partes[0]
-            if (cabecalho.endsWith("GGA") && partes.size > 10) {
+            
+            // FILTRO ULTRA-ROBUSTO: Pega qualquer coisa que termine em GGA
+            if (cabecalho.endsWith("GGA") && partes.size > 9) {
                 val latNmea = partes[2]
                 val latDir = partes[3]
                 val lonNmea = partes[4]
@@ -403,7 +407,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val qualidade = partes[6]
                 val cotaNmeaString = partes[9]
 
-                if (latNmea.isEmpty() || lonNmea.isEmpty() || cotaNmeaString.isEmpty()) return
+                if (latNmea.isEmpty() || lonNmea.isEmpty()) return
 
                 latAtual = converterNmeaParaGrausDecimais(latNmea, latDir)
                 lonAtual = converterNmeaParaGrausDecimais(lonNmea, lonDir)
@@ -416,7 +420,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val hemisferio = if (latAtual >= 0) "N" else "S"
                 zonaUtmAtual = "${zonaUtmNumerica}${hemisferio}"
 
-                cotaChaoAtual = cotaNmeaString.toDouble()
+                val cotaLimpa = cotaNmeaString.toDoubleOrNull()
+                if (cotaLimpa != null) {
+                    cotaChaoAtual = cotaLimpa
+                }
 
                 atualizarStatusRtk(qualidade)
                 atualizarInterfaceGlobal()
@@ -556,7 +563,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (mapaTopografico.modoLocacao && mapaTopografico.alvoLocacao != null) {
             atualizarPainelLocacao()
         } else {
-            tvResultadoCorteAterro.text = "---"
+            // Não limpamos o tvResultadoCorteAterro se o modo Espião estiver rodando nele
+            if (!isBluetoothConnected || !tvResultadoCorteAterro.text.toString().startsWith("RAW")) {
+                tvResultadoCorteAterro.text = "---"
+            }
         }
     }
     
