@@ -1,6 +1,6 @@
 package com.topografia.app
 
-// Commit para forçar a atualização do GitHub Actions, adicionar Importação e Pastas Virtuais
+// Commit forçando a renderização perfeita da UI e Zoom de Pontos
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -50,6 +50,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var btnCogo: Button
     private lateinit var btnConectar: Button
     private lateinit var btnCentralizar: ImageButton
+    private lateinit var btnZoomProjeto: ImageButton
     private lateinit var btnImportar: Button
 
     private lateinit var tvStatusRTK: TextView
@@ -79,10 +80,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val listaDePontos = mutableListOf<PontoTopografico>()
     private lateinit var dbHelper: DatabaseHelper
     
-    // SISTEMA DE PASTAS VIRTUAIS (ÁREAS)
     private var areaAtual: String = "CAMPO"
     private var nomeObraAtual: String = "Padrao"
-    private var projetoAtual: String = "[CAMPO] Padrao" // Tag real salva no banco
+    private var projetoAtual: String = "[CAMPO] Padrao" 
 
     private lateinit var locationManager: LocationManager
     private val PERMISSION_REQUEST_GPS = 100
@@ -148,6 +148,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnCogo = findViewById(R.id.btnCogo)
         btnConectar = findViewById(R.id.btnConectar)
         btnCentralizar = findViewById(R.id.btnCentralizar)
+        btnZoomProjeto = findViewById(R.id.btnZoomProjeto)
         btnImportar = findViewById(R.id.btnImportar)
 
         tvStatusRTK = findViewById(R.id.tvStatusRTK)
@@ -175,6 +176,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnCentralizar.setOnClickListener {
             mapaTopografico.centralizarNoUsuario()
+            Toast.makeText(this, "Foco: RTK Atual", Toast.LENGTH_SHORT).show()
+        }
+        
+        btnZoomProjeto.setOnClickListener {
+            mapaTopografico.zoomParaProjeto()
+            Toast.makeText(this, "Foco: Malha do Projeto", Toast.LENGTH_SHORT).show()
         }
 
         btnImportar.setOnClickListener {
@@ -230,9 +237,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val novoPonto = PontoTopografico(nomeDoPonto, norteUtmAtual, lesteUtmAtual, cotaChaoAtual, zonaUtmAtual, statusRtkAtual, projetoAtual)
             listaDePontos.add(novoPonto)
             dbHelper.inserirPonto(novoPonto)
-            mapaTopografico.listaDePontos = listaDePontos
-            mapaTopografico.invalidate()
-
+            mapaTopografico.listaDePontos = listaDePontos // Dispara o motor TIN
+            
             Toast.makeText(this, "Ponto salvo na área $areaAtual", Toast.LENGTH_SHORT).show()
 
             val match = Regex("(\\d+)$").find(nomeDoPonto)
@@ -315,7 +321,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun iniciarLeituraGpsCelular() {
         try {
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
-            Toast.makeText(this, "Buscando satélites do celular...", Toast.LENGTH_SHORT).show()
         } catch (ex: SecurityException) {
             Log.e("MainActivity", "Erro de segurança ao acessar GPS", ex)
         }
@@ -353,7 +358,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             if (mapaTopografico.modoLocacao && mapaTopografico.alvoLocacao != null) {
                 val alvo = mapaTopografico.alvoLocacao!!
                 val dist = hypot(alvo.lesteUtm - lesteUtmAtual, alvo.norteUtm - norteUtmAtual)
-                tvResultadoCorteAterro.text = "ALVO: ${alvo.nome}\nDIST: ${String.format(Locale.getDefault(), "%.3f", dist)}m"
+                
+                // Cálculo de Greide na Locação com Bastão
+                val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
+                val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: alvo.cotaChao
+                val cotaPontaBastao = cotaChaoAtual - alturaBastao
+                val diferencaCota = cotaProjeto - cotaPontaBastao
+                
+                val txtCorteAterro = if (diferencaCota > 0) "ATERRO: ${String.format(Locale.getDefault(), "%.3f", diferencaCota)}m"
+                                     else if (diferencaCota < 0) "CORTE: ${String.format(Locale.getDefault(), "%.3f", diferencaCota * -1)}m"
+                                     else "NO GREIDE"
+                                     
+                tvResultadoCorteAterro.text = "ALVO: ${alvo.nome}\nDIST: ${String.format(Locale.getDefault(), "%.3f", dist)}m\n$txtCorteAterro"
                 tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FFFF"))
             } else {
                 tvResultadoCorteAterro.text = "---"
@@ -365,7 +381,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         override fun onProviderDisabled(provider: String) {}
     }
 
-    // --- NOVO GERENCIADOR DE ÁREAS (PASTAS VIRTUAIS) ---
     private fun mostrarDialogoDeProjeto() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -411,14 +426,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 if (nomeDig.isNotEmpty()) {
                     areaAtual = areaSel
                     nomeObraAtual = nomeDig
-                    projetoAtual = "[$areaAtual] $nomeObraAtual" // Isolamento Blindado no Banco!
+                    projetoAtual = "[$areaAtual] $nomeObraAtual"
                     
                     btnCad.text = areaAtual
                     
                     listaDePontos.clear()
                     listaDePontos.addAll(dbHelper.buscarPontosPorProjeto(projetoAtual))
                     mapaTopografico.listaDePontos = listaDePontos
-                    mapaTopografico.centralizarNoUsuario()
+                    mapaTopografico.zoomParaProjeto()
                     
                     Toast.makeText(this, "Área ativa: $projetoAtual", Toast.LENGTH_SHORT).show()
                 }
@@ -427,7 +442,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 Toast.makeText(this, "Para excluir do banco, insira o código em DatabaseHelper.kt", Toast.LENGTH_LONG).show()
                 listaDePontos.clear()
                 mapaTopografico.listaDePontos = listaDePontos
-                mapaTopografico.invalidate()
             }
             .setCancelable(false)
             .show()
@@ -442,7 +456,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         Thread {
             try {
-                // DETECÇÃO AUTOMÁTICA DE ÁREA
                 val extensao = nomeArquivo.substringAfterLast('.', "").uppercase()
                 val novaArea = when {
                     extensao == "XML" || tipoMime.contains("xml") -> "XML"
@@ -451,7 +464,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     else -> areaAtual
                 }
 
-                // Troca de pasta automaticamente para não misturar dados
                 areaAtual = novaArea
                 projetoAtual = "[$areaAtual] $nomeObraAtual"
 
@@ -513,7 +525,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     listaDePontos.clear()
                     listaDePontos.addAll(dbHelper.buscarPontosPorProjeto(projetoAtual))
                     mapaTopografico.listaDePontos = listaDePontos
-                    mapaTopografico.centralizarNoUsuario() 
+                    mapaTopografico.zoomParaProjeto() // Agora a câmera VAI direto pros pontos importados!
                     
                     Toast.makeText(this, "$pontosImportados pontos salvos em $projetoAtual!", Toast.LENGTH_LONG).show()
                 }
