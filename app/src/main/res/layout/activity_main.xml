@@ -4,70 +4,59 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- MAPA EM TELA CHEIA -->
+    <!-- MAPA -->
     <com.topografia.app.MapView
         android:id="@+id/mapaTopografico"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- HUD: BARRA DE FERRAMENTAS (TOPO) -->
+    <!-- 1. BARRA DE FERRAMENTAS SUPERIOR -->
     <LinearLayout
         android:id="@+id/panelTools"
         android:layout_width="match_parent"
-        android:layout_height="72dp"
+        android:layout_height="65dp"
         android:layout_alignParentTop="true"
-        android:layout_marginTop="16dp"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
+        android:layout_margin="12dp"
         android:background="@drawable/bg_hud"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="6dp">
+        android:padding="4dp">
 
         <Button
             android:id="@+id/btnCad"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:layout_marginEnd="4dp"
+            android:layout_marginEnd="2dp"
             android:text="CAD"
-            android:textSize="11sp"
+            android:textSize="10sp"
             android:textStyle="bold"
             android:textColor="#FFFFFF"
-            android:drawableTop="@drawable/ic_cad"
-            android:drawablePadding="4dp"
-            android:backgroundTint="#333333"
-            android:elevation="0dp" />
+            android:backgroundTint="#333333" />
 
         <Button
             android:id="@+id/btnLocacao"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:layout_marginEnd="4dp"
+            android:layout_marginEnd="2dp"
             android:text="LOCAR"
-            android:textSize="11sp"
+            android:textSize="10sp"
             android:textStyle="bold"
             android:textColor="#FFFFFF"
-            android:drawableTop="@drawable/ic_locacao"
-            android:drawablePadding="4dp"
-            android:backgroundTint="#4D3319"
-            android:elevation="0dp" />
+            android:backgroundTint="#4D3319" />
 
         <Button
             android:id="@+id/btnCogo"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:layout_marginEnd="4dp"
+            android:layout_marginEnd="2dp"
             android:text="COGO"
-            android:textSize="11sp"
+            android:textSize="10sp"
             android:textStyle="bold"
             android:textColor="#FFFFFF"
-            android:drawableTop="@drawable/ic_cogo"
-            android:drawablePadding="4dp"
-            android:backgroundTint="#333333"
-            android:elevation="0dp" />
+            android:backgroundTint="#333333" />
 
         <Button
             android:id="@+id/btnConectar"
@@ -75,24 +64,19 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:text="RTK"
-            android:textSize="11sp"
+            android:textSize="10sp"
             android:textStyle="bold"
             android:textColor="#FFFFFF"
-            android:drawableTop="@drawable/ic_rtk"
-            android:drawablePadding="4dp"
-            android:backgroundTint="#333333"
-            android:elevation="0dp" />
+            android:backgroundTint="#333333" />
     </LinearLayout>
 
-    <!-- HUD: STATUS / TELEMETRIA (ESQUERDA) -->
+    <!-- 2. PAINEL DE TELEMETRIA (Fica sozinho no canto superior esquerdo para não sobrepor) -->
     <LinearLayout
         android:id="@+id/panelStatus"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_below="@id/panelTools"
-        android:layout_alignParentStart="true"
-        android:layout_marginTop="12dp"
-        android:layout_marginStart="16dp"
+        android:layout_marginStart="12dp"
         android:background="@drawable/bg_hud"
         android:orientation="vertical"
         android:padding="12dp">
@@ -103,14 +87,14 @@
             android:layout_height="wrap_content"
             android:text="Desconectado"
             android:textColor="#D32F2F"
-            android:textSize="14sp"
+            android:textSize="12sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tvNorteUTM"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:text="N: ---"
             android:textColor="#FFFFFF"
             android:textSize="16sp"
@@ -131,11 +115,10 @@
             android:id="@+id/tvLatitude"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="2dp"
             android:text="Lat: ---"
             android:textColor="#888888"
-            android:textSize="11sp"
-            android:fontFamily="monospace" />
+            android:textSize="10sp" />
 
         <TextView
             android:id="@+id/tvLongitude"
@@ -143,68 +126,66 @@
             android:layout_height="wrap_content"
             android:text="Lon: ---"
             android:textColor="#888888"
-            android:textSize="11sp"
-            android:fontFamily="monospace" />
+            android:textSize="10sp" />
     </LinearLayout>
 
-    <!-- HUD: GREIDE / CORTE-ATERRO (DIREITA) -->
-    <LinearLayout
-        android:id="@+id/panelGreide"
-        android:layout_width="170dp"
+    <!-- PAINEL DE ALVO (Só aparece/ocupa espaço se tiver locando) -->
+    <TextView
+        android:id="@+id/tvResultadoCorteAterro"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_below="@id/panelTools"
-        android:layout_alignParentEnd="true"
-        android:layout_marginTop="12dp"
-        android:layout_marginEnd="16dp"
+        android:layout_below="@id/panelStatus"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="8dp"
         android:background="@drawable/bg_hud"
-        android:orientation="vertical"
-        android:padding="10dp">
+        android:padding="8dp"
+        android:text="---"
+        android:textColor="#AAAAAA"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:fontFamily="monospace" />
 
-        <EditText
-            android:id="@+id/etAlturaBastao"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Bastão (m)"
-            android:textColorHint="#888888"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:inputType="numberDecimal"
-            android:backgroundTint="#00BFFF" />
+    <!-- 3. BOTÕES DE CÂMERA LATERAIS -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/panelBottomControls"
+        android:layout_alignParentEnd="true"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="12dp"
+        android:orientation="vertical">
 
-        <EditText
-            android:id="@+id/etCotaProjeto"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:hint="Grade (m)"
-            android:textColorHint="#888888"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:inputType="numberDecimal"
-            android:backgroundTint="#00BFFF" />
+        <!-- Botão Zoom no Projeto -->
+        <ImageButton
+            android:id="@+id/btnZoomProjeto"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/bg_botao_redondo"
+            android:backgroundTint="#00BFFF"
+            android:src="@android:drawable/ic_menu_mapmode"
+            android:tint="#FFFFFF"
+            android:elevation="6dp" />
 
-        <TextView
-            android:id="@+id/tvResultadoCorteAterro"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="---"
-            android:textColor="#AAAAAA"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:fontFamily="monospace" />
+        <!-- Botão Centralizar em Mim -->
+        <ImageButton
+            android:id="@+id/btnCentralizar"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_botao_redondo"
+            android:backgroundTint="#333333"
+            android:src="@android:drawable/ic_menu_mylocation"
+            android:tint="#FFFFFF"
+            android:elevation="6dp" />
     </LinearLayout>
 
-    <!-- BOTOES DE IMPORTAR E EXPORTAR (FUNDO DA TELA) -->
+    <!-- 4. BOTOES DE IMPORTAR E EXPORTAR (FUNDO DA TELA) -->
     <LinearLayout
         android:id="@+id/bottomButtons"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="50dp"
         android:layout_alignParentBottom="true"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="16dp"
+        android:layout_margin="12dp"
         android:orientation="horizontal">
 
         <Button
@@ -212,9 +193,9 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:layout_marginEnd="8dp"
-            android:text="IMPORTAR PROJETO"
-            android:textSize="13sp"
+            android:layout_marginEnd="6dp"
+            android:text="IMPORTAR"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:backgroundTint="#009688"
             android:textColor="#FFFFFF" />
@@ -224,39 +205,24 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="EXPORTAR LEVANT."
-            android:textSize="13sp"
+            android:text="EXPORTAR"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:backgroundTint="#D84315"
             android:textColor="#FFFFFF" />
     </LinearLayout>
 
-    <!-- BOTAO CENTRALIZAR (FLUTUANTE NO CANTO DIREITO) -->
-    <ImageButton
-        android:id="@+id/btnCentralizar"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
-        android:layout_above="@id/panelBottomControls"
-        android:layout_alignParentEnd="true"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="16dp"
-        android:background="@drawable/bg_botao_redondo"
-        android:src="@android:drawable/ic_menu_compass"
-        android:tint="#FFFFFF"
-        android:elevation="8dp"
-        android:contentDescription="Centralizar Mapa" />
-
-    <!-- HUD: CONTROLES DE CAMPO (ACIMA DOS BOTOES IMPORT/EXPORT) -->
+    <!-- 5. PAINEL DE CONTROLE INFERIOR (Cotadas, Bastão e Gravação) -->
     <RelativeLayout
         android:id="@+id/panelBottomControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_above="@id/bottomButtons"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="12dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="8dp"
         android:background="@drawable/bg_hud"
-        android:padding="16dp">
+        android:padding="12dp">
 
         <LinearLayout
             android:id="@+id/llCotaBase"
@@ -271,9 +237,8 @@
                 android:layout_height="wrap_content"
                 android:text="COTA ATUAL"
                 android:textColor="#888888"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.05" />
+                android:textSize="10sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvCota"
@@ -281,21 +246,54 @@
                 android:layout_height="wrap_content"
                 android:text="---"
                 android:textColor="#00BFFF"
-                android:textSize="26sp"
+                android:textSize="22sp"
                 android:textStyle="bold"
                 android:fontFamily="monospace" />
         </LinearLayout>
 
-        <EditText
-            android:id="@+id/etNomePonto"
-            android:layout_width="90dp"
+        <!-- Movi Bastão e Grade para cá, limpos e compactos -->
+        <LinearLayout
+            android:id="@+id/llInputs"
+            android:layout_width="100dp"
             android:layout_height="wrap_content"
             android:layout_toEndOf="@id/llCotaBase"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="12dp"
+            android:orientation="vertical">
+
+            <EditText
+                android:id="@+id/etAlturaBastao"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Bastão (m)"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:inputType="numberDecimal"
+                android:backgroundTint="#00BFFF" />
+
+            <EditText
+                android:id="@+id/etCotaProjeto"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Grade (m)"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:inputType="numberDecimal"
+                android:backgroundTint="#00BFFF" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/etNomePonto"
+            android:layout_width="70dp"
+            android:layout_height="wrap_content"
+            android:layout_toEndOf="@id/llInputs"
             android:layout_toStartOf="@id/btnGravarPonto"
             android:layout_centerVertical="true"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
-            android:hint="ID Ponto"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:hint="ID"
             android:textColorHint="#777777"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
@@ -305,14 +303,14 @@
 
         <ImageButton
             android:id="@+id/btnGravarPonto"
-            android:layout_width="72dp"
-            android:layout_height="72dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
             android:background="@drawable/bg_botao_redondo"
-            android:src="@android:drawable/ic_menu_mylocation"
+            android:backgroundTint="#00E676"
+            android:src="@android:drawable/ic_menu_add"
             android:tint="#FFFFFF"
-            android:contentDescription="Gravar ponto" />
+            android:elevation="4dp" />
     </RelativeLayout>
-
 </RelativeLayout>
