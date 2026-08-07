@@ -14,30 +14,27 @@ import kotlin.math.hypot
 
 class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
-    // Pincéis (Cores e formas)
     private val paintPonto = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL }
     private val paintTexto = Paint().apply { color = Color.WHITE; textSize = 35f }
     private val paintLinhaMedicao = Paint().apply { color = Color.parseColor("#FFC107"); strokeWidth = 5f }
-    
-    // Pincel do seu Triângulo (RTK)
     private val paintRTK = Paint().apply { color = Color.parseColor("#00E676"); style = Paint.Style.FILL }
-    
     private val paintSelecao = Paint().apply { color = Color.parseColor("#00BFFF"); style = Paint.Style.FILL }
     private val paintCruz = Paint().apply { color = Color.RED; strokeWidth = 4f; style = Paint.Style.STROKE }
     private val paintIma = Paint().apply { color = Color.parseColor("#FF9800"); strokeWidth = 4f; style = Paint.Style.STROKE }
     private val paintLinhaLocacao = Paint().apply { color = Color.parseColor("#00FFFF"); strokeWidth = 6f; style = Paint.Style.STROKE }
     
-    // Pincel para o texto de Escala/Altitude da câmera
     private val paintEscala = Paint().apply { 
         color = Color.parseColor("#00FFFF")
         textSize = 38f
         isFakeBoldText = true
-        setShadowLayer(5f, 2f, 2f, Color.BLACK) // Sombra forte para ler no sol
+        setShadowLayer(5f, 2f, 2f, Color.BLACK) 
     }
 
     var listaDePontos = listOf<PontoTopografico>()
     var rtkNorte = 0.0
     var rtkLeste = 0.0
+    
+    var azimuteUsuario = 0f
 
     private var pontoSelecionado1: PontoTopografico? = null
     private var pontoSelecionado2: PontoTopografico? = null
@@ -62,15 +59,28 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     init {
         scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                mScaleFactor *= detector.scaleFactor
-                mScaleFactor = Math.max(0.1f, Math.min(mScaleFactor, 20.0f))
+                
+                val fatorOriginal = detector.scaleFactor
+                // Mantém o freio macio no zoom
+                val amortecido = 1.0f + ((fatorOriginal - 1.0f) * 0.15f) 
+                
+                val newScaleFactor = Math.max(0.1f, Math.min(mScaleFactor * amortecido, 100.0f))
+                
+                // CORREÇÃO CRÍTICA DO ZOOM: Ancora o movimento no Ponto Focal (centro dos dedos)
+                val scaleRatio = newScaleFactor / mScaleFactor
+                val focusX = detector.focusX
+                val focusY = detector.focusY
+                
+                mPosX = focusX - (focusX - mPosX) * scaleRatio
+                mPosY = focusY - (focusY - mPosY) * scaleRatio
+                
+                mScaleFactor = newScaleFactor
                 invalidate()
                 return true
             }
         })
     }
 
-    // Função chamada pelo botão para jogar a tela de volta em você
     fun centralizarNoUsuario() {
         mPosX = 0f
         mPosY = 0f
@@ -79,9 +89,9 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawColor(Color.parseColor("#121212")) // Fundo escuro padrão
+        canvas.drawColor(Color.parseColor("#121212")) 
 
-        canvas.save() // Salva o estado para a câmera 2D
+        canvas.save() 
         canvas.translate(mPosX, mPosY)
         canvas.scale(mScaleFactor, mScaleFactor)
 
@@ -92,11 +102,9 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             val telaX = centroX + ((ponto.lesteUtm - rtkLeste) * escala).toFloat()
             val telaY = centroY - ((ponto.norteUtm - rtkNorte) * escala).toFloat()
 
-            // Os pontos normais ficam do mesmo tamanho na tela dividindo o raio pela escala
             val raioPonto = 15f / mScaleFactor
             canvas.drawCircle(telaX, telaY, raioPonto, paintPonto)
             
-            // O texto dos pontos também não cresce
             val textSizeOriginal = 35f
             paintTexto.textSize = textSizeOriginal / mScaleFactor
             canvas.drawText(ponto.nome, telaX + (25f / mScaleFactor), telaY + (10f / mScaleFactor), paintTexto)
@@ -159,31 +167,30 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             canvas.drawCircle(alvoX, alvoY, 25f / mScaleFactor, paintIma)
         }
 
-        // DESENHANDO VOCÊ (TRIÂNGULO RTK CONSTANTE)
-        // A divisão por mScaleFactor garante que ele nunca vai engolir a tela no zoom
         val tamanhoRtk = 45f / mScaleFactor 
         val pathRtk = Path()
         
-        // A ponta aguda fica exata no centroX, centroY
         pathRtk.moveTo(centroX, centroY) 
-        // Perna esquerda traseira
         pathRtk.lineTo(centroX - (tamanhoRtk * 0.6f), centroY + tamanhoRtk) 
-        // Perna direita traseira
         pathRtk.lineTo(centroX + (tamanhoRtk * 0.6f), centroY + tamanhoRtk) 
         pathRtk.close()
         
+        canvas.save()
+        canvas.rotate(azimuteUsuario, centroX, centroY)
         canvas.drawPath(pathRtk, paintRTK)
-
-        // Restaura a matriz. O que desenharmos a partir daqui fica "colado" no vidro do celular
         canvas.restore() 
 
-        // HUD DA ESCALA (VISÃO DA CÂMERA)
-        // Calcula quantos metros a largura da tela inteira está enxergando
-        val larguraEmMetros = width / (escala * mScaleFactor)
-        val textoEscala = "Visão: ${String.format(Locale.getDefault(), "%.1f", larguraEmMetros)} m"
+        canvas.restore() 
+
+        val alturaEmMetros = (width / (escala * mScaleFactor)) * 0.8f 
         
-        // Desenha a escala flutuando no lado esquerdo, abaixo do painel de telemetria
-        canvas.drawText(textoEscala, 40f, 400f, paintEscala)
+        val textoEscala = if (alturaEmMetros < 1.0f) {
+            "Alt Câmera: ${String.format(Locale.getDefault(), "%.0f", alturaEmMetros * 100)} cm"
+        } else {
+            "Alt Câmera: ${String.format(Locale.getDefault(), "%.2f", alturaEmMetros)} m"
+        }
+        
+        canvas.drawText(textoEscala, 40f, 320f, paintEscala)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
