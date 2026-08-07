@@ -61,12 +61,10 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 
                 val fatorOriginal = detector.scaleFactor
-                // Mantém o freio macio no zoom
                 val amortecido = 1.0f + ((fatorOriginal - 1.0f) * 0.15f) 
                 
                 val newScaleFactor = Math.max(0.1f, Math.min(mScaleFactor * amortecido, 100.0f))
                 
-                // CORREÇÃO CRÍTICA DO ZOOM: Ancora o movimento no Ponto Focal (centro dos dedos)
                 val scaleRatio = newScaleFactor / mScaleFactor
                 val focusX = detector.focusX
                 val focusY = detector.focusY
