@@ -1,8 +1,11 @@
 package com.topografia.app
 
-// Commit forçando a renderização perfeita da UI e Zoom de Pontos
 import android.Manifest
 import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -14,6 +17,7 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.ArrayAdapter
@@ -31,6 +35,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.io.OutputStreamWriter
 import java.util.Locale
+import java.util.UUID
 import kotlin.math.*
 
 data class PontoTopografico(
@@ -84,6 +89,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var nomeObraAtual: String = "Padrao"
     private var projetoAtual: String = "[CAMPO] Padrao" 
 
+    // VARIÁVEIS DE GPS E SENSORES
     private lateinit var locationManager: LocationManager
     private val PERMISSION_REQUEST_GPS = 100
 
@@ -96,6 +102,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var lastMagnetometerSet = false
     private val rotationMatrix = FloatArray(9)
     private val orientation = FloatArray(3)
+
+    // VARIÁVEIS DO BLUETOOTH SPP
+    private var bluetoothAdapter: BluetoothAdapter? = null
+    private var bluetoothSocket: BluetoothSocket? = null
+    private var isBluetoothConnected = false
+    private val UUID_SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") // Padrão Serial Universal
+    private val PERMISSION_REQUEST_BLUETOOTH = 101
 
     private val exportarLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -143,6 +156,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         acelerometro = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         magnetometro = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothAdapter = bluetoothManager.adapter
+
         btnCad = findViewById(R.id.btnCad)
         btnLocacao = findViewById(R.id.btnLocacao)
         btnCogo = findViewById(R.id.btnCogo)
@@ -176,7 +192,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnCentralizar.setOnClickListener {
             mapaTopografico.centralizarNoUsuario()
-            Toast.makeText(this, "Foco: RTK Atual", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Foco: Localização Atual", Toast.LENGTH_SHORT).show()
         }
         
         btnZoomProjeto.setOnClickListener {
@@ -186,6 +202,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnImportar.setOnClickListener {
             importarLauncher.launch("*/*")
+        }
+
+        // --- BOTÃO RTK (GERENCIADOR BLUETOOTH) ---
+        btnConectar.setOnClickListener {
+            if (isBluetoothConnected) {
+                desconectarBluetooth()
+            } else {
+                mostrarDialogoBluetooth()
+            }
         }
 
         btnLocacao.setOnClickListener {
@@ -206,9 +231,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         mapaTopografico.onLocacaoLock = { ponto ->
             if (ponto != null) {
                 Toast.makeText(this, "ALVO TRAVADO: ${ponto.nome}", Toast.LENGTH_SHORT).show()
-                val dist = hypot(ponto.lesteUtm - lesteUtmAtual, ponto.norteUtm - norteUtmAtual)
-                tvResultadoCorteAterro.text = "ALVO: ${ponto.nome}\nDIST: ${String.format(Locale.getDefault(), "%.3f", dist)}m"
-                tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FFFF"))
+                atualizarPainelLocacao()
             } else {
                 tvResultadoCorteAterro.text = "SELECIONE ALVO..."
                 tvResultadoCorteAterro.setTextColor(Color.parseColor("#AAAAAA"))
@@ -218,10 +241,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnCad.setOnClickListener { mostrarDialogoDeProjeto() }
         btnCogo.setOnClickListener { Toast.makeText(this, "Calculadora COGO", Toast.LENGTH_SHORT).show() }
 
-        btnConectar.setOnClickListener {
-            Toast.makeText(this, "Aguardando implementação Bluetooth SPP...", Toast.LENGTH_SHORT).show()
-        }
-
         btnGravarPonto.setOnClickListener {
             val nomeDoPonto = etNomePonto.text.toString()
 
@@ -230,14 +249,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 return@setOnClickListener
             }
             if (norteUtmAtual == 0.0) {
-                Toast.makeText(this, "Erro: Sem coordenada de GPS!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Erro: Sem coordenada válida!", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
             val novoPonto = PontoTopografico(nomeDoPonto, norteUtmAtual, lesteUtmAtual, cotaChaoAtual, zonaUtmAtual, statusRtkAtual, projetoAtual)
             listaDePontos.add(novoPonto)
             dbHelper.inserirPonto(novoPonto)
-            mapaTopografico.listaDePontos = listaDePontos // Dispara o motor TIN
+            mapaTopografico.listaDePontos = listaDePontos 
             
             Toast.makeText(this, "Ponto salvo na área $areaAtual", Toast.LENGTH_SHORT).show()
 
@@ -266,6 +285,177 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             exportarLauncher.launch(intent)
         }
     }
+
+    // =========================================================================
+    // MOTORES BLUETOOTH E NMEA (COBRANDO PRECISÃO MILIMÉTRICA DO RTK)
+    // =========================================================================
+
+    private fun mostrarDialogoBluetooth() {
+        if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
+            Toast.makeText(this, "Ligue o Bluetooth primeiro!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.BLUETOOTH_CONNECT), PERMISSION_REQUEST_BLUETOOTH)
+                return
+            }
+        }
+
+        val dispositivosPareados = bluetoothAdapter?.bondedDevices
+        if (dispositivosPareados.isNullOrEmpty()) {
+            Toast.makeText(this, "Nenhum RTK pareado encontrado.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val nomesDispositivos = dispositivosPareados.map { it.name ?: "Desconhecido" }.toTypedArray()
+        val listaDispositivos = dispositivosPareados.toList()
+
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("Selecione sua Antena RTK")
+            .setItems(nomesDispositivos) { _, which ->
+                val dispositivoSelecionado = listaDispositivos[which]
+                conectarBluetooth(dispositivoSelecionado)
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun conectarBluetooth(device: BluetoothDevice) {
+        Toast.makeText(this, "Conectando ao RTK: ${device.name}...", Toast.LENGTH_SHORT).show()
+        
+        Thread {
+            try {
+                if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    return@Thread
+                }
+                
+                bluetoothSocket = device.createRfcommSocketToServiceRecord(UUID_SPP)
+                bluetoothSocket?.connect()
+                isBluetoothConnected = true
+                
+                runOnUiThread {
+                    btnConectar.setBackgroundColor(Color.parseColor("#00E676")) // Verde
+                    btnConectar.text = "RTK ON"
+                    Toast.makeText(this, "RTK CONECTADO!", Toast.LENGTH_SHORT).show()
+                }
+                
+                lerDadosBluetooth()
+            } catch (e: Exception) {
+                isBluetoothConnected = false
+                runOnUiThread {
+                    Toast.makeText(this, "Falha ao conectar: Verifique se o RTK está ligado.", Toast.LENGTH_LONG).show()
+                }
+                desconectarBluetooth()
+            }
+        }.start()
+    }
+
+    private fun desconectarBluetooth() {
+        isBluetoothConnected = false
+        try {
+            bluetoothSocket?.close()
+        } catch (e: Exception) { }
+        
+        btnConectar.setBackgroundColor(Color.parseColor("#333333"))
+        btnConectar.text = "RTK"
+        statusRtkAtual = "Desconectado"
+        tvStatusRTK.text = statusRtkAtual
+        tvStatusRTK.setTextColor(Color.parseColor("#D32F2F"))
+    }
+
+    private fun lerDadosBluetooth() {
+        val inputStream = bluetoothSocket?.inputStream
+        val bufferedReader = inputStream?.bufferedReader()
+
+        while (isBluetoothConnected) {
+            try {
+                val linhaNmea = bufferedReader?.readLine()
+                if (linhaNmea != null && linhaNmea.startsWith("$")) {
+                    runOnUiThread {
+                        processarNMEA(linhaNmea)
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Conexão com RTK perdida.", Toast.LENGTH_SHORT).show()
+                    desconectarBluetooth()
+                }
+                break
+            }
+        }
+    }
+
+    private fun processarNMEA(linhaNmea: String) {
+        // Ignora sentenças incompletas
+        if (!linhaNmea.contains("*")) return
+
+        try {
+            val partes = linhaNmea.split(",")
+            // $GPGGA contém todos os dados cruciais de topografia (Lat, Lon, Alt, Qualidade)
+            if ((partes[0] == "\$GPGGA" || partes[0] == "\$GNGGA") && partes.size > 10) {
+                val latNmea = partes[2]
+                val latDir = partes[3]
+                val lonNmea = partes[4]
+                val lonDir = partes[5]
+                val qualidade = partes[6]
+                val cotaNmeaString = partes[9]
+
+                if (latNmea.isEmpty() || lonNmea.isEmpty() || cotaNmeaString.isEmpty()) return
+
+                latAtual = converterNmeaParaGrausDecimais(latNmea, latDir)
+                lonAtual = converterNmeaParaGrausDecimais(lonNmea, lonDir)
+
+                val utmCoords = converterGrausParaUTM(latAtual, lonAtual)
+                lesteUtmAtual = utmCoords[0]
+                norteUtmAtual = utmCoords[1]
+
+                val zonaUtmNumerica = ((lonAtual + 180) / 6).toInt() + 1
+                val hemisferio = if (latAtual >= 0) "N" else "S"
+                zonaUtmAtual = "${zonaUtmNumerica}${hemisferio}"
+
+                // A altitude base do equipamento
+                cotaChaoAtual = cotaNmeaString.toDouble()
+
+                atualizarStatusRtk(qualidade)
+                atualizarInterfaceGlobal()
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Erro NMEA: $linhaNmea", e)
+        }
+    }
+
+    private fun atualizarStatusRtk(qualidade: String) {
+        val (texto, cor) = when (qualidade) {
+            "4" -> "RTK FIXO (Milimétrico)" to "#00E676"           // Verde neon (Melhor cenário)
+            "5" -> "RTK FLOAT (Centimétrico)" to "#FFC107"         // Âmbar
+            "1", "2" -> "GPS AUTÔNOMO (Metros)" to "#FF5252"       // Vermelho
+            "0" -> "SEM SINAL" to "#D32F2F"
+            else -> "QUALIDADE $qualidade" to "#AAAAAA"
+        }
+        statusRtkAtual = texto
+        tvStatusRTK.text = texto
+        tvStatusRTK.setTextColor(Color.parseColor(cor))
+    }
+
+    private fun converterNmeaParaGrausDecimais(nmeaValor: String, direcao: String): Double {
+        if (nmeaValor.isEmpty()) return 0.0
+        val pontoIndex = nmeaValor.indexOf('.')
+        if (pontoIndex == -1 || pontoIndex < 2) return 0.0
+
+        val grausString = nmeaValor.substring(0, pontoIndex - 2)
+        val minutosString = nmeaValor.substring(pontoIndex - 2)
+
+        val graus = grausString.toDoubleOrNull() ?: 0.0
+        val minutos = minutosString.toDoubleOrNull() ?: 0.0
+        var grausDecimais = graus + (minutos / 60.0)
+
+        if (direcao == "S" || direcao == "W") grausDecimais *= -1
+        return grausDecimais
+    }
+
+    // =========================================================================
 
     override fun onResume() {
         super.onResume()
@@ -301,6 +491,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
+    // --- GPS INTERNO (BACKUP QUANDO O RTK NÃO ESTIVER CONECTADO) ---
     private fun checarPermissoesGps() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), PERMISSION_REQUEST_GPS)
@@ -313,8 +504,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_GPS && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             iniciarLeituraGpsCelular()
-        } else {
-            Toast.makeText(this, "Permissão de GPS negada. O mapa não irá atualizar.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -328,7 +517,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
-            
+            // REGRA DE OURO: Se o RTK Bluetooth estiver conectado, ignora totalmente o GPS ruim do celular.
+            if (isBluetoothConnected) return 
+
             latAtual = location.latitude
             lonAtual = location.longitude
             cotaChaoAtual = location.altitude 
@@ -341,44 +532,54 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val hemisferio = if (latAtual >= 0) "N" else "S"
             zonaUtmAtual = "${zonaUtmNumerica}${hemisferio}"
 
-            statusRtkAtual = "GPS INTERNO"
+            statusRtkAtual = "GPS CELULAR"
             tvStatusRTK.text = "GPS INTERNO (±${location.accuracy.toInt()}m)"
             tvStatusRTK.setTextColor(Color.parseColor("#FFC107"))
 
-            mapaTopografico.rtkNorte = norteUtmAtual
-            mapaTopografico.rtkLeste = lesteUtmAtual
-            mapaTopografico.invalidate()
-
-            tvLatitude.text = "Lat: ${String.format(Locale.getDefault(), "%.6f", latAtual)}°"
-            tvLongitude.text = "Lon: ${String.format(Locale.getDefault(), "%.6f", lonAtual)}°"
-            tvNorteUTM.text = "N: ${String.format(Locale.getDefault(), "%.3f", norteUtmAtual)}"
-            tvLesteUTM.text = "E: ${String.format(Locale.getDefault(), "%.3f", lesteUtmAtual)}"
-            tvCota.text = String.format(Locale.getDefault(), "%.3f", cotaChaoAtual)
-
-            if (mapaTopografico.modoLocacao && mapaTopografico.alvoLocacao != null) {
-                val alvo = mapaTopografico.alvoLocacao!!
-                val dist = hypot(alvo.lesteUtm - lesteUtmAtual, alvo.norteUtm - norteUtmAtual)
-                
-                // Cálculo de Greide na Locação com Bastão
-                val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
-                val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: alvo.cotaChao
-                val cotaPontaBastao = cotaChaoAtual - alturaBastao
-                val diferencaCota = cotaProjeto - cotaPontaBastao
-                
-                val txtCorteAterro = if (diferencaCota > 0) "ATERRO: ${String.format(Locale.getDefault(), "%.3f", diferencaCota)}m"
-                                     else if (diferencaCota < 0) "CORTE: ${String.format(Locale.getDefault(), "%.3f", diferencaCota * -1)}m"
-                                     else "NO GREIDE"
-                                     
-                tvResultadoCorteAterro.text = "ALVO: ${alvo.nome}\nDIST: ${String.format(Locale.getDefault(), "%.3f", dist)}m\n$txtCorteAterro"
-                tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FFFF"))
-            } else {
-                tvResultadoCorteAterro.text = "---"
-            }
+            atualizarInterfaceGlobal()
         }
-
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         override fun onProviderEnabled(provider: String) {}
         override fun onProviderDisabled(provider: String) {}
+    }
+
+    // Esta função agrupa a atualização de tela para evitar repetição de código (usada pelo RTK e pelo Celular)
+    private fun atualizarInterfaceGlobal() {
+        mapaTopografico.rtkNorte = norteUtmAtual
+        mapaTopografico.rtkLeste = lesteUtmAtual
+        mapaTopografico.invalidate()
+
+        tvLatitude.text = "Lat: ${String.format(Locale.getDefault(), "%.6f", latAtual)}°"
+        tvLongitude.text = "Lon: ${String.format(Locale.getDefault(), "%.6f", lonAtual)}°"
+        tvNorteUTM.text = "N: ${String.format(Locale.getDefault(), "%.3f", norteUtmAtual)}"
+        tvLesteUTM.text = "E: ${String.format(Locale.getDefault(), "%.3f", lesteUtmAtual)}"
+        
+        val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
+        val cotaPontaBastao = cotaChaoAtual - alturaBastao
+        tvCota.text = String.format(Locale.getDefault(), "%.3f", cotaPontaBastao)
+
+        if (mapaTopografico.modoLocacao && mapaTopografico.alvoLocacao != null) {
+            atualizarPainelLocacao()
+        } else {
+            tvResultadoCorteAterro.text = "---"
+        }
+    }
+    
+    private fun atualizarPainelLocacao() {
+        val alvo = mapaTopografico.alvoLocacao ?: return
+        val dist = hypot(alvo.lesteUtm - lesteUtmAtual, alvo.norteUtm - norteUtmAtual)
+        
+        val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
+        val cotaProjeto = etCotaProjeto.text.toString().toDoubleOrNull() ?: alvo.cotaChao
+        val cotaPontaBastao = cotaChaoAtual - alturaBastao
+        val diferencaCota = cotaProjeto - cotaPontaBastao
+        
+        val txtCorteAterro = if (diferencaCota > 0) "ATERRO: ${String.format(Locale.getDefault(), "%.3f", diferencaCota)}m"
+                             else if (diferencaCota < 0) "CORTE: ${String.format(Locale.getDefault(), "%.3f", diferencaCota * -1)}m"
+                             else "NO GREIDE"
+                             
+        tvResultadoCorteAterro.text = "ALVO: ${alvo.nome}\nDIST: ${String.format(Locale.getDefault(), "%.3f", dist)}m\n$txtCorteAterro"
+        tvResultadoCorteAterro.setTextColor(Color.parseColor("#00FFFF"))
     }
 
     private fun mostrarDialogoDeProjeto() {
@@ -525,7 +726,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     listaDePontos.clear()
                     listaDePontos.addAll(dbHelper.buscarPontosPorProjeto(projetoAtual))
                     mapaTopografico.listaDePontos = listaDePontos
-                    mapaTopografico.zoomParaProjeto() // Agora a câmera VAI direto pros pontos importados!
+                    mapaTopografico.zoomParaProjeto() 
                     
                     Toast.makeText(this, "$pontosImportados pontos salvos em $projetoAtual!", Toast.LENGTH_LONG).show()
                 }
