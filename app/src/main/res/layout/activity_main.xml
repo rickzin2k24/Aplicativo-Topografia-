@@ -196,6 +196,41 @@
             android:fontFamily="monospace" />
     </LinearLayout>
 
+    <!-- BOTOES DE IMPORTAR E EXPORTAR (FUNDO DA TELA) -->
+    <LinearLayout
+        android:id="@+id/bottomButtons"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_alignParentBottom="true"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnImportar"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:text="IMPORTAR PROJETO"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:backgroundTint="#009688"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/btnExportarCsv"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="EXPORTAR LEVANT."
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:backgroundTint="#D84315"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
     <!-- BOTAO CENTRALIZAR (FLUTUANTE NO CANTO DIREITO) -->
     <ImageButton
         android:id="@+id/btnCentralizar"
@@ -211,12 +246,12 @@
         android:elevation="8dp"
         android:contentDescription="Centralizar Mapa" />
 
-    <!-- HUD: CONTROLES DE CAMPO (ACIMA DO BOTAO EXPORTAR) -->
+    <!-- HUD: CONTROLES DE CAMPO (ACIMA DOS BOTOES IMPORT/EXPORT) -->
     <RelativeLayout
         android:id="@+id/panelBottomControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_above="@id/btnExportarCsv"
+        android:layout_above="@id/bottomButtons"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="12dp"
@@ -279,20 +314,5 @@
             android:tint="#FFFFFF"
             android:contentDescription="Gravar ponto" />
     </RelativeLayout>
-
-    <!-- EXPORTAR CSV (FUNDO DA TELA) -->
-    <Button
-        android:id="@+id/btnExportarCsv"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_alignParentBottom="true"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="16dp"
-        android:text="EXPORTAR LEVANTAMENTO (.CSV)"
-        android:textSize="14sp"
-        android:textStyle="bold"
-        android:backgroundTint="#D84315"
-        android:textColor="#FFFFFF" />
 
 </RelativeLayout>
