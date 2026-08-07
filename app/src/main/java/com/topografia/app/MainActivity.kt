@@ -1,6 +1,5 @@
 package com.topografia.app
 
-// Commit para Interceptador NMEA de Local Fictício (Cota Milimétrica)
 import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
@@ -110,7 +109,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val UUID_SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") 
     private val PERMISSION_REQUEST_BLUETOOTH = 101
 
-    // VARIÁVEL DE CONTROLE DE PRECISÃO
     private var ultimaVezNmea: Long = 0
 
     private val exportarLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -281,6 +279,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     // =========================================================================================
+    // PERMISSÕES E INICIALIZAÇÃO DE GPS (AS FUNÇÕES QUE FALTAVAM)
+    // =========================================================================================
+
+    private fun checarPermissoesGps() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), PERMISSION_REQUEST_GPS)
+        } else {
+            iniciarLeituraGpsCelular()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_GPS && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            iniciarLeituraGpsCelular()
+        }
+    }
+
+    // =========================================================================================
     // MOTORES DE LEITURA (INTERCEPTADOR NMEA)
     // =========================================================================================
 
@@ -291,7 +308,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun iniciarLeituraGpsCelular() {
         try {
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
-            // ESCUTA CLANDESTINA: Ouve os dados injetados pelo Bluetooth GNSS
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 locationManager.addNmeaListener(nmeaListener, null)
             }
@@ -304,9 +320,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         override fun onLocationChanged(location: Location) {
             if (isBluetoothConnected) return 
 
-            // A MÁGICA ACONTECE AQUI:
-            // Se recebemos um sinal NMEA puro nos últimos 2 segundos, IGNORAMOS o Location do Android
-            // porque o Android arredonda a cota. Deixamos o processador NMEA comandar os números!
             if (System.currentTimeMillis() - ultimaVezNmea < 2000) return 
 
             latAtual = location.latitude
@@ -350,7 +363,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
                 if (latNmea.isEmpty() || lonNmea.isEmpty() || cotaNmeaString.isEmpty()) return
 
-                // Salva a hora exata que recebemos a precisão milimétrica para travar o Android
                 ultimaVezNmea = System.currentTimeMillis()
 
                 latAtual = converterNmeaParaGrausDecimais(latNmea, latDir)
@@ -364,7 +376,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val hemisferio = if (latAtual >= 0) "N" else "S"
                 zonaUtmAtual = "${zonaUtmNumerica}${hemisferio}"
 
-                // Puxando a cota direto da frase original (sem o Android cortar)
                 val cotaLimpa = cotaNmeaString.toDoubleOrNull()
                 if (cotaLimpa != null) {
                     cotaChaoAtual = cotaLimpa
@@ -406,7 +417,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val alturaBastao = etAlturaBastao.text.toString().toDoubleOrNull() ?: 0.0
         val cotaPontaBastao = cotaChaoAtual - alturaBastao
         
-        // Agora a cota vai imprimir todos os milímetros lidos da NMEA!
         tvCota.text = String.format(Locale.getDefault(), "%.3f", cotaPontaBastao)
 
         if (mapaTopografico.modoLocacao && mapaTopografico.alvoLocacao != null) {
