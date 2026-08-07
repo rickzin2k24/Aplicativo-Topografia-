@@ -24,8 +24,6 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private val paintCruz = Paint().apply { color = Color.RED; strokeWidth = 4f; style = Paint.Style.STROKE }
     private val paintIma = Paint().apply { color = Color.parseColor("#FF9800"); strokeWidth = 4f; style = Paint.Style.STROKE }
     private val paintLinhaLocacao = Paint().apply { color = Color.parseColor("#00FFFF"); strokeWidth = 6f; style = Paint.Style.STROKE }
-    
-    // Pincel da Malha de Superfície (TIN)
     private val paintMalha = Paint().apply { color = Color.parseColor("#3300FF00"); strokeWidth = 2f; style = Paint.Style.STROKE }
     
     private val paintEscala = Paint().apply { 
@@ -38,7 +36,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     var listaDePontos = listOf<PontoTopografico>()
         set(value) {
             field = value
-            gerarMalhaTIN() // Refaz a malha sempre que a lista de pontos mudar
+            gerarMalhaTIN() 
             invalidate()
         }
 
@@ -72,7 +70,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 val amortecido = 1.0f + ((detector.scaleFactor - 1.0f) * 0.15f) 
-                val newScaleFactor = max(0.01f, min(mScaleFactor * amortecido, 500.0f)) // Mais limite de zoom
+                val newScaleFactor = max(0.01f, min(mScaleFactor * amortecido, 500.0f)) 
                 
                 val scaleRatio = newScaleFactor / mScaleFactor
                 val focusX = detector.focusX
@@ -88,7 +86,6 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         })
     }
 
-    // BOTÃO 1: Focar no GPS do Celular
     fun centralizarNoUsuario() {
         mPosX = 0f
         mPosY = 0f
@@ -96,7 +93,6 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         invalidate()
     }
 
-    // BOTÃO 2: Focar no Projeto (Acha os pontos importados onde quer que eles estejam)
     fun zoomParaProjeto() {
         if (listaDePontos.isEmpty()) return
         
@@ -124,7 +120,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         if (maxDiff > 0.5) {
             mScaleFactor = (telaMin / (maxDiff * escala)).toFloat()
         } else {
-            mScaleFactor = 5.0f // Se for um ponto só
+            mScaleFactor = 5.0f 
         }
         
         val offsetE = (centroProjE - rtkLeste) * escala
@@ -139,7 +135,6 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         invalidate()
     }
 
-    // MOTOR DE SUPERFÍCIE (TIN Grego - Conecta vizinhos próximos para visualizar a malha)
     private fun gerarMalhaTIN() {
         pathMalhaTIN.reset()
         if (listaDePontos.size < 3) return
@@ -147,13 +142,11 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         val centroX = width / 2f
         val centroY = height / 2f
         
-        // Algoritmo robusto O(N^2) para evitar travamento da UI em arquivos gigantes
         for (i in listaDePontos.indices) {
             val p1 = listaDePontos[i]
             val x1 = centroX + ((p1.lesteUtm - rtkLeste) * escala).toFloat()
             val y1 = centroY - ((p1.norteUtm - rtkNorte) * escala).toFloat()
             
-            // Conecta com os 3 vizinhos mais próximos
             val distancias = mutableListOf<Pair<Int, Double>>()
             for (j in listaDePontos.indices) {
                 if (i != j) {
@@ -186,11 +179,9 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         val centroX = width / 2f
         val centroY = height / 2f
         
-        // 1. Desenha a Malha TIN por baixo de tudo
         paintMalha.strokeWidth = 2f / mScaleFactor
         canvas.drawPath(pathMalhaTIN, paintMalha)
 
-        // 2. Desenha os Pontos
         for (ponto in listaDePontos) {
             val telaX = centroX + ((ponto.lesteUtm - rtkLeste) * escala).toFloat()
             val telaY = centroY - ((ponto.norteUtm - rtkNorte) * escala).toFloat()
@@ -276,14 +267,14 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         canvas.restore() 
 
         val alturaEmMetros = (width / (escala * mScaleFactor)) * 0.8f 
-        
         val textoEscala = if (alturaEmMetros < 1.0f) {
-            "Alt Câmera: ${String.format(Locale.getDefault(), "%.0f", alturaEmMetros * 100)} cm"
+            "Câmera: ${String.format(Locale.getDefault(), "%.0f", alturaEmMetros * 100)} cm"
         } else {
-            "Alt Câmera: ${String.format(Locale.getDefault(), "%.2f", alturaEmMetros)} m"
+            "Câmera: ${String.format(Locale.getDefault(), "%.2f", alturaEmMetros)} m"
         }
         
-        canvas.drawText(textoEscala, 30f, height - 280f, paintEscala)
+        // Movi o texto da câmera para a METADE SUPERIOR da tela para não esmagar nada
+        canvas.drawText(textoEscala, 30f, 600f, paintEscala)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
