@@ -1,11 +1,16 @@
 package com.topografia.app
 
+// Commit para forçar a atualização do GitHub Actions e inserir Sensores
 import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -35,7 +40,8 @@ data class PontoTopografico(
     val nomeProjeto: String
 )
 
-class MainActivity : AppCompatActivity() {
+// A Classe agora herda SensorEventListener para escutar a bússola nativa
+class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var btnCad: Button
     private lateinit var btnLocacao: Button
@@ -74,6 +80,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var locationManager: LocationManager
     private val PERMISSION_REQUEST_GPS = 100
 
+    // SISTEMA DE BÚSSOLA (MAGNETÔMETRO + ACELERÔMETRO)
+    private lateinit var sensorManager: SensorManager
+    private var acelerometro: Sensor? = null
+    private var magnetometro: Sensor? = null
+    private val lastAccelerometer = FloatArray(3)
+    private val lastMagnetometer = FloatArray(3)
+    private var lastAccelerometerSet = false
+    private var lastMagnetometerSet = false
+    private val rotationMatrix = FloatArray(9)
+    private val orientation = FloatArray(3)
+
     private val exportarLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.data?.let { uri ->
@@ -107,6 +124,11 @@ class MainActivity : AppCompatActivity() {
 
         dbHelper = DatabaseHelper(this)
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        
+        // Iniciando os hardwares da Bússola
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        acelerometro = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        magnetometro = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
         btnCad = findViewById(R.id.btnCad)
         btnLocacao = findViewById(R.id.btnLocacao)
@@ -220,6 +242,43 @@ class MainActivity : AppCompatActivity() {
             exportarLauncher.launch(intent)
         }
     }
+
+    // --- CICLO DE VIDA DA BÚSSOLA ---
+    override fun onResume() {
+        super.onResume()
+        acelerometro?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
+        magnetometro?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        sensorManager.unregisterListener(this) // Desliga a bússola para poupar bateria
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+            System.arraycopy(event.values, 0, lastAccelerometer, 0, event.values.size)
+            lastAccelerometerSet = true
+        } else if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
+            System.arraycopy(event.values, 0, lastMagnetometer, 0, event.values.size)
+            lastMagnetometerSet = true
+        }
+
+        if (lastAccelerometerSet && lastMagnetometerSet) {
+            SensorManager.getRotationMatrix(rotationMatrix, null, lastAccelerometer, lastMagnetometer)
+            SensorManager.getOrientation(rotationMatrix, orientation)
+            
+            val azimuteEmRadianos = orientation[0]
+            val azimuteEmGraus = Math.toDegrees(azimuteEmRadianos.toDouble()).toFloat()
+            
+            // Envia o grau exato para onde o usuário está olhando direto para o mapa
+            mapaTopografico.azimuteUsuario = azimuteEmGraus
+            mapaTopografico.invalidate()
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    // ----------------------------------
 
     private fun checarPermissoesGps() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
