@@ -1,6 +1,6 @@
 package com.topografia.app
 
-// Commit para forçar a atualização do GitHub Actions e inserir Sensores
+// Commit para forçar a atualização do GitHub Actions, adicionar Importação e Pastas Virtuais
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -16,9 +16,12 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import android.util.Log
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,7 +43,6 @@ data class PontoTopografico(
     val nomeProjeto: String
 )
 
-// A Classe agora herda SensorEventListener para escutar a bússola nativa
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var btnCad: Button
@@ -48,6 +50,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var btnCogo: Button
     private lateinit var btnConectar: Button
     private lateinit var btnCentralizar: ImageButton
+    private lateinit var btnImportar: Button
 
     private lateinit var tvStatusRTK: TextView
     private lateinit var tvLatitude: TextView
@@ -75,12 +78,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private val listaDePontos = mutableListOf<PontoTopografico>()
     private lateinit var dbHelper: DatabaseHelper
-    private var projetoAtual: String = "Projeto_Padrao"
+    
+    // SISTEMA DE PASTAS VIRTUAIS (ÁREAS)
+    private var areaAtual: String = "CAMPO"
+    private var nomeObraAtual: String = "Padrao"
+    private var projetoAtual: String = "[CAMPO] Padrao" // Tag real salva no banco
 
     private lateinit var locationManager: LocationManager
     private val PERMISSION_REQUEST_GPS = 100
 
-    // SISTEMA DE BÚSSOLA (MAGNETÔMETRO + ACELERÔMETRO)
     private lateinit var sensorManager: SensorManager
     private var acelerometro: Sensor? = null
     private var magnetometro: Sensor? = null
@@ -118,6 +124,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
+    private val importarLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            processarArquivoImportado(uri)
+        } else {
+            Toast.makeText(this, "Importação cancelada.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -125,7 +139,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         dbHelper = DatabaseHelper(this)
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         
-        // Iniciando os hardwares da Bússola
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         acelerometro = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         magnetometro = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
@@ -135,6 +148,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnCogo = findViewById(R.id.btnCogo)
         btnConectar = findViewById(R.id.btnConectar)
         btnCentralizar = findViewById(R.id.btnCentralizar)
+        btnImportar = findViewById(R.id.btnImportar)
 
         tvStatusRTK = findViewById(R.id.tvStatusRTK)
         tvLatitude = findViewById(R.id.tvLatitude)
@@ -161,6 +175,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnCentralizar.setOnClickListener {
             mapaTopografico.centralizarNoUsuario()
+        }
+
+        btnImportar.setOnClickListener {
+            importarLauncher.launch("*/*")
         }
 
         btnLocacao.setOnClickListener {
@@ -215,7 +233,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mapaTopografico.listaDePontos = listaDePontos
             mapaTopografico.invalidate()
 
-            Toast.makeText(this, "Ponto salvo: $nomeDoPonto", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Ponto salvo na área $areaAtual", Toast.LENGTH_SHORT).show()
 
             val match = Regex("(\\d+)$").find(nomeDoPonto)
             if (match != null) {
@@ -231,19 +249,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnExportarCsv.setOnClickListener {
             if (listaDePontos.isEmpty()) {
-                Toast.makeText(this, "Projeto Vazio!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "A área $areaAtual está vazia!", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "text/csv"
-                putExtra(Intent.EXTRA_TITLE, "${projetoAtual}_AsBuilt.csv")
+                putExtra(Intent.EXTRA_TITLE, "${projetoAtual}.csv")
             }
             exportarLauncher.launch(intent)
         }
     }
 
-    // --- CICLO DE VIDA DA BÚSSOLA ---
     override fun onResume() {
         super.onResume()
         acelerometro?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
@@ -252,7 +269,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onPause() {
         super.onPause()
-        sensorManager.unregisterListener(this) // Desliga a bússola para poupar bateria
+        sensorManager.unregisterListener(this) 
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -271,14 +288,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val azimuteEmRadianos = orientation[0]
             val azimuteEmGraus = Math.toDegrees(azimuteEmRadianos.toDouble()).toFloat()
             
-            // Envia o grau exato para onde o usuário está olhando direto para o mapa
             mapaTopografico.azimuteUsuario = azimuteEmGraus
             mapaTopografico.invalidate()
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-    // ----------------------------------
 
     private fun checarPermissoesGps() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -350,31 +365,177 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         override fun onProviderDisabled(provider: String) {}
     }
 
+    // --- NOVO GERENCIADOR DE ÁREAS (PASTAS VIRTUAIS) ---
     private fun mostrarDialogoDeProjeto() {
-        val input = EditText(this)
-        input.hint = "Ex: Loteamento_A"
-        input.setText(projetoAtual)
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 40, 50, 10)
+        }
+
+        val labelArea = TextView(this).apply { 
+            text = "Área de Trabalho (Origem):"
+            setTextColor(Color.LTGRAY) 
+            textSize = 12f
+        }
+        val spinnerArea = Spinner(this)
+        val areas = arrayOf("CAMPO", "XML", "CSV", "TXT")
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, areas)
+        spinnerArea.adapter = adapter
+        spinnerArea.setSelection(areas.indexOf(areaAtual))
+
+        val labelNome = TextView(this).apply { 
+            text = "Nome do Projeto:"
+            setTextColor(Color.LTGRAY) 
+            setPadding(0, 30, 0, 0) 
+            textSize = 12f
+        }
+        val inputProjeto = EditText(this).apply {
+            hint = "Ex: Loteamento_A"
+            setText(nomeObraAtual)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.DKGRAY)
+        }
+
+        layout.addView(labelArea)
+        layout.addView(spinnerArea)
+        layout.addView(labelNome)
+        layout.addView(inputProjeto)
 
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Gerenciador de Projetos")
-            .setMessage("Digite o nome da obra/projeto atual:")
-            .setView(input)
-            .setPositiveButton("Confirmar") { _, _ ->
-                val nomeDigitado = input.text.toString().trim()
-                if (nomeDigitado.isNotEmpty()) {
-                    projetoAtual = nomeDigitado
-                    btnCad.text = projetoAtual 
-
+            .setView(layout)
+            .setPositiveButton("ABRIR / CRIAR") { _, _ ->
+                val areaSel = spinnerArea.selectedItem.toString()
+                val nomeDig = inputProjeto.text.toString().trim().replace(" ", "_")
+                
+                if (nomeDig.isNotEmpty()) {
+                    areaAtual = areaSel
+                    nomeObraAtual = nomeDig
+                    projetoAtual = "[$areaAtual] $nomeObraAtual" // Isolamento Blindado no Banco!
+                    
+                    btnCad.text = areaAtual
+                    
                     listaDePontos.clear()
                     listaDePontos.addAll(dbHelper.buscarPontosPorProjeto(projetoAtual))
                     mapaTopografico.listaDePontos = listaDePontos
-                    mapaTopografico.invalidate()
-
-                    Toast.makeText(this, "Projeto carregado!", Toast.LENGTH_SHORT).show()
+                    mapaTopografico.centralizarNoUsuario()
+                    
+                    Toast.makeText(this, "Área ativa: $projetoAtual", Toast.LENGTH_SHORT).show()
                 }
+            }
+            .setNeutralButton("LIMPAR ÁREA") { _, _ ->
+                Toast.makeText(this, "Para excluir do banco, insira o código em DatabaseHelper.kt", Toast.LENGTH_LONG).show()
+                listaDePontos.clear()
+                mapaTopografico.listaDePontos = listaDePontos
+                mapaTopografico.invalidate()
             }
             .setCancelable(false)
             .show()
+    }
+
+    private fun processarArquivoImportado(uri: android.net.Uri) {
+        val contentResolver = applicationContext.contentResolver
+        val tipoMime = contentResolver.getType(uri) ?: ""
+        val nomeArquivo = uri.path ?: ""
+
+        Toast.makeText(this, "Lendo arquivo... aguarde.", Toast.LENGTH_SHORT).show()
+
+        Thread {
+            try {
+                // DETECÇÃO AUTOMÁTICA DE ÁREA
+                val extensao = nomeArquivo.substringAfterLast('.', "").uppercase()
+                val novaArea = when {
+                    extensao == "XML" || tipoMime.contains("xml") -> "XML"
+                    extensao == "CSV" || tipoMime.contains("csv") -> "CSV"
+                    extensao == "TXT" || tipoMime.contains("text") -> "TXT"
+                    else -> areaAtual
+                }
+
+                // Troca de pasta automaticamente para não misturar dados
+                areaAtual = novaArea
+                projetoAtual = "[$areaAtual] $nomeObraAtual"
+
+                val inputStream = contentResolver.openInputStream(uri)
+                val reader = inputStream?.bufferedReader()
+                var pontosImportados = 0
+
+                reader?.useLines { linhas ->
+                    if (areaAtual == "XML") {
+                        var lendoPonto = false
+                        var nomePontoXML = ""
+                        
+                        for (linha in linhas) {
+                            val l = linha.trim()
+                            if (l.startsWith("<CgPoint")) {
+                                val matchNome = Regex("name=\"([^\"]+)\"").find(l)
+                                nomePontoXML = matchNome?.groupValues?.get(1) ?: "PT_${pontosImportados}"
+                                lendoPonto = true
+                                
+                                val matchCoords = Regex(">([^<]+)</CgPoint>").find(l)
+                                if (matchCoords != null) {
+                                    val coords = matchCoords.groupValues[1].trim().split(Regex("\\s+"))
+                                    if (coords.size >= 3) {
+                                        salvarPontoImportado(nomePontoXML, coords[0], coords[1], coords[2])
+                                        pontosImportados++
+                                    }
+                                    lendoPonto = false
+                                }
+                            } else if (lendoPonto && !l.contains("<")) {
+                                val coords = l.split(Regex("\\s+"))
+                                if (coords.size >= 3) {
+                                    salvarPontoImportado(nomePontoXML, coords[0], coords[1], coords[2])
+                                    pontosImportados++
+                                }
+                                lendoPonto = false
+                            }
+                        }
+                    } 
+                    else {
+                        for ((index, linha) in linhas.withIndex()) {
+                            if (index == 0 && linha.contains(Regex("[A-Za-z]"))) continue 
+                            
+                            val colunas = linha.split(Regex("[,;\\t]"))
+                            if (colunas.size >= 4) {
+                                val nome = colunas[0].trim()
+                                val norte = colunas[1].trim()
+                                val leste = colunas[2].trim()
+                                val cota = colunas[3].trim()
+                                
+                                salvarPontoImportado(nome, norte, leste, cota)
+                                pontosImportados++
+                            }
+                        }
+                    }
+                }
+
+                runOnUiThread {
+                    btnCad.text = areaAtual
+                    listaDePontos.clear()
+                    listaDePontos.addAll(dbHelper.buscarPontosPorProjeto(projetoAtual))
+                    mapaTopografico.listaDePontos = listaDePontos
+                    mapaTopografico.centralizarNoUsuario() 
+                    
+                    Toast.makeText(this, "$pontosImportados pontos salvos em $projetoAtual!", Toast.LENGTH_LONG).show()
+                }
+
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Erro ao importar: O formato está correto?", Toast.LENGTH_LONG).show()
+                    Log.e("Importacao", "Falha fatal no parser", e)
+                }
+            }
+        }.start() 
+    }
+
+    private fun salvarPontoImportado(nome: String, norteStr: String, lesteStr: String, cotaStr: String) {
+        val norte = norteStr.toDoubleOrNull() ?: 0.0
+        val leste = lesteStr.toDoubleOrNull() ?: 0.0
+        val cota = cotaStr.toDoubleOrNull() ?: 0.0
+        
+        if (norte != 0.0 && leste != 0.0) {
+            val novoPonto = PontoTopografico(nome, norte, leste, cota, "IMPORT", "IMPORTADO", projetoAtual)
+            dbHelper.inserirPonto(novoPonto)
+        }
     }
 
     private fun converterGrausParaUTM(lat: Double, lon: Double): DoubleArray {
